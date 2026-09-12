@@ -1,0 +1,167 @@
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFName,
+  PDFNumber,
+} from "pdf-lib"
+
+import type { UnlockResult } from "./types"
+
+const LOAD_OPTIONS = {
+  updateMetadata: false,
+  ignoreEncryption: true,
+} as const
+
+const SAVE_OPTIONS = {
+  useObjectStreams: true,
+  objectsPerTick: 100,
+} as const
+
+export async function loadPdfForEditing(bytes: Uint8Array): Promise<PDFDocument> {
+  return PDFDocument.load(bytes, LOAD_OPTIONS)
+}
+
+export function stripLogicalPageMetadata(doc: PDFDocument): boolean {
+  const pageLabels = doc.catalog.lookupMaybe(PDFName.of("PageLabels"), PDFDict)
+  if (!pageLabels) return false
+  doc.catalog.delete(PDFName.of("PageLabels"))
+  return true
+}
+
+function hasSignatureField(field: PDFDict, visited: Set<PDFDict>): boolean {
+  if (visited.has(field)) return false
+  visited.add(field)
+
+  const fieldType = field.lookupMaybe(PDFName.of("FT"), PDFName)
+  if (fieldType?.asString() === "/Sig") return true
+
+  const value = field.lookupMaybe(PDFName.of("V"), PDFDict)
+  if (value instanceof PDFDict) return true
+
+  const kids = field.lookupMaybe(PDFName.of("Kids"), PDFArray)
+  if (!(kids instanceof PDFArray)) return false
+
+  for (let i = 0; i < kids.size(); i++) {
+    const childField = kids.lookupMaybe(i, PDFDict)
+    if (childField && hasSignatureField(childField, visited)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function hasSignatureData(doc: PDFDocument): boolean {
+  const acroForm = doc.catalog.lookupMaybe(PDFName.of("AcroForm"), PDFDict)
+  if (!(acroForm instanceof PDFDict)) return false
+
+  const sigFlags = acroForm.lookupMaybe(PDFName.of("SigFlags"), PDFNumber)
+  if (sigFlags && sigFlags.asNumber() > 0) return true
+
+  const fields = acroForm.lookupMaybe(PDFName.of("Fields"), PDFArray)
+  if (!(fields instanceof PDFArray)) return false
+
+  const visited = new Set<PDFDict>()
+  for (let i = 0; i < fields.size(); i++) {
+    const field = fields.lookupMaybe(i, PDFDict)
+    if (field && hasSignatureField(field, visited)) return true
+  }
+
+  return false
+}
+
+function getBypassReasons(doc: PDFDocument): string[] {
+  const reasons = new Set<string>()
+
+  if (doc.isEncrypted) reasons.add("encryption")
+
+  try {
+    const perms = doc.catalog.lookupMaybe(PDFName.of("Perms"), PDFDict)
+    if (perms instanceof PDFDict) reasons.add("certification")
+  } catch {
+    // Ignore malformed permission dictionaries.
+  }
+
+  try {
+    if (hasSignatureData(doc)) reasons.add("signature")
+  } catch {
+    // Ignore malformed form/signature structures.
+  }
+
+  return [...reasons]
+}
+
+function stripSecurityEntries(doc: PDFDocument) {
+  doc.catalog.delete(PDFName.of("Perms"))
+
+  const acroForm = doc.catalog.lookupMaybe(PDFName.of("AcroForm"), PDFDict)
+  if (acroForm instanceof PDFDict) {
+    acroForm.delete(PDFName.of("SigFlags"))
+  }
+
+  doc.context.trailerInfo.Encrypt = undefined
+}
+
+async function copyPagesIntoFreshDocument(sourceDoc: PDFDocument): Promise<Uint8Array> {
+  const unlockedDoc = await PDFDocument.create()
+  const copiedPages = await unlockedDoc.copyPages(
+    sourceDoc,
+    sourceDoc.getPageIndices(),
+  )
+  for (const page of copiedPages) {
+    unlockedDoc.addPage(page)
+  }
+  stripLogicalPageMetadata(unlockedDoc)
+  return unlockedDoc.save(SAVE_OPTIONS)
+}
+
+export async function normalizePdfForEditing(
+  bytes: Uint8Array,
+): Promise<UnlockResult> {
+  let encrypted = false
+  try {
+    await PDFDocument.load(bytes, { updateMetadata: false })
+  } catch {
+    encrypted = true
+  }
+
+  let sourceDoc: PDFDocument
+  try {
+    sourceDoc = await loadPdfForEditing(bytes)
+  } catch {
+    return { bytes, bypassApplied: false, reasons: encrypted ? ["encryption"] : [] }
+  }
+
+  const reasons = getBypassReasons(sourceDoc)
+  if (encrypted && !reasons.includes("encryption")) reasons.unshift("encryption")
+  const removedLogicalPageMetadata = stripLogicalPageMetadata(sourceDoc)
+  if (reasons.length === 0) {
+    if (!removedLogicalPageMetadata) {
+      return { bytes, bypassApplied: false, reasons }
+    }
+    try {
+      const sanitizedBytes = await sourceDoc.save(SAVE_OPTIONS)
+      return { bytes: sanitizedBytes, bypassApplied: false, reasons }
+    } catch {
+      return { bytes, bypassApplied: false, reasons }
+    }
+  }
+
+  try {
+    const unlockedBytes = await copyPagesIntoFreshDocument(sourceDoc)
+    return { bytes: unlockedBytes, bypassApplied: true, reasons }
+  } catch {
+    // Certified PDFs can have broken form/page refs; try an in-place rewrite.
+  }
+
+  try {
+    stripSecurityEntries(sourceDoc)
+    const rewrittenBytes = await sourceDoc.save(SAVE_OPTIONS)
+    return { bytes: rewrittenBytes, bypassApplied: true, reasons }
+  } catch {
+    return { bytes, bypassApplied: false, reasons }
+  }
+}
+
+export { SAVE_OPTIONS, LOAD_OPTIONS }
