@@ -23,10 +23,12 @@ async function loadPdfjs(): Promise<Pdfjs> {
     const pdfjs = (await import(
       "pdfjs-dist/legacy/build/pdf.mjs"
     )) as unknown as Pdfjs
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-      "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
-      import.meta.url,
-    ).toString()
+    const { createRequire } = await import("node:module")
+    const { pathToFileURL } = await import("node:url")
+    const require = createRequire(import.meta.url)
+    pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
+      require.resolve("pdfjs-dist/legacy/build/pdf.worker.min.mjs"),
+    ).href
     return pdfjs
   }
 

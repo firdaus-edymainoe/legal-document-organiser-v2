@@ -1,7 +1,7 @@
 import { toDegrees } from "pdf-lib"
 
 import type { AnalyzeResult, Box, PageAnalysis } from "./types"
-import { displayedSize, normalizeRotation } from "./geometry"
+import { displayedSize, normalizeRotation, viewerTextAngle } from "./geometry"
 import { classifyIssues, snapTextAngle } from "./plan"
 import { destroyPdf, getPdfjs } from "./pdfjs"
 import { loadPdfForEditing } from "./unlock"
@@ -24,7 +24,7 @@ export async function analyzePdf(bytes: Uint8Array): Promise<AnalyzeResult> {
     const displayTextAngle =
       contentTextAngle == null
         ? null
-        : snapTextAngle(contentTextAngle + sourceRotation)
+        : viewerTextAngle(snapTextAngle(contentTextAngle), sourceRotation)
 
     return {
       index,

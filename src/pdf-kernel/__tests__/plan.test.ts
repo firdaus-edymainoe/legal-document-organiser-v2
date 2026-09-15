@@ -74,7 +74,7 @@ describe("planPage", () => {
         displayedWidthPt: A4.widthPt,
         displayedHeightPt: A4.heightPt,
         displayTextAngle: 0,
-        contentTextAngle: 270,
+        contentTextAngle: 90,
       }),
       "rotate-ccw",
     )

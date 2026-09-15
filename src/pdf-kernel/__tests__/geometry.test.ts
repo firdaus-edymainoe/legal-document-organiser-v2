@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { A4 } from "../types"
-import { cwToCcw, flattenViewerRotation, placementOnA4 } from "../geometry"
+import { cwToCcw, flattenViewerRotation, placementOnA4, viewerTextAngle } from "../geometry"
 
 describe("placementOnA4", () => {
   it("is identity for portrait A4 with rotate 0", () => {
@@ -38,10 +38,23 @@ describe("placementOnA4", () => {
     expect(cwToCcw(270)).toBe(90)
   })
 
-  it("bakes Acrobat /Rotate 270 as 90 CW for pdf-lib drawPage", () => {
+  it("keeps Acrobat /Rotate as the CW bake angle (CCW happens in placement)", () => {
     expect(flattenViewerRotation(0)).toBe(0)
-    expect(flattenViewerRotation(90)).toBe(270)
+    expect(flattenViewerRotation(90)).toBe(90)
     expect(flattenViewerRotation(180)).toBe(180)
-    expect(flattenViewerRotation(270)).toBe(90)
+    expect(flattenViewerRotation(270)).toBe(270)
+  })
+
+  it("draws /Rotate 270 landscape as 90 CCW so the viewer matches", () => {
+    const place = placementOnA4(842, 596, flattenViewerRotation(270))
+    expect(place.rotateCcw).toBe(90)
+  })
+
+  it("combines pdf.js CCW content angle with Acrobat CW /Rotate", () => {
+    expect(viewerTextAngle(270, 270)).toBe(0)
+    expect(viewerTextAngle(0, 90)).toBe(90)
+    expect(viewerTextAngle(0, 180)).toBe(180)
+    expect(viewerTextAngle(0, 0)).toBe(0)
+    expect(viewerTextAngle(90, 90)).toBe(0)
   })
 })

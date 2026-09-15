@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest"
 
 import { A4 } from "../types"
 import { composePdf, ingestPdf } from "../index"
+import { assertUprightAgainstSource, orientationVerdict, pageBands } from "./orientation"
 
 const SAMPLE_DIR =
   process.env.SAMPLE_DIR ??
@@ -62,6 +63,7 @@ describe("real sample PDFs", () => {
         )
         expect(ingested.imageOnly).toBe(false)
         await assertCanonical(ingested.canonical, name)
+        await assertUprightAgainstSource(file.bytes, ingested.canonical, name)
         results.push({ name, ingested })
       }
 
@@ -158,6 +160,10 @@ describe("real sample PDFs", () => {
       expect(b.analysis.pageCount).toBe(227)
       expect(b.analysis.pages[0]?.sourceRotation).toBe(270)
       await assertCanonical(b.canonical, authorities.name)
+      expect(
+        orientationVerdict(await pageBands(authorities.bytes), await pageBands(b.canonical)),
+        "authorities p1",
+      ).not.toBe("UPSIDE")
     },
     300_000,
   )

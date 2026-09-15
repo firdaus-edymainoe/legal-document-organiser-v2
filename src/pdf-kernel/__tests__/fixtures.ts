@@ -78,6 +78,43 @@ export async function rotate180Pdf(): Promise<Uint8Array> {
   return doc.save()
 }
 
+export async function rotate270LandscapePdf(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create()
+  const { font, bold } = await fonts(doc)
+  const page = doc.addPage(SIZE.a4Landscape)
+  const [width, height] = SIZE.a4Landscape
+  // /Rotate 270 CW maps the landscape right edge to the displayed top.
+  page.drawText("HEADER-270", {
+    x: width - 160,
+    y: height / 2,
+    size: 20,
+    font: bold,
+  })
+  page.drawText("FOOTER-270", {
+    x: 36,
+    y: height / 2,
+    size: 12,
+    font,
+  })
+  page.setRotation(degrees(270))
+  return doc.save()
+}
+
+export async function rotate90PortraitPdf(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create()
+  const { font, bold } = await fonts(doc)
+  const page = doc.addPage(SIZE.a4Portrait)
+  page.drawText("HEADER-90", {
+    x: 48,
+    y: A4.heightPt - 64,
+    size: 20,
+    font: bold,
+  })
+  page.drawText("FOOTER-90", { x: 48, y: 48, size: 12, font })
+  page.setRotation(degrees(90))
+  return doc.save()
+}
+
 export async function landscapeUprightPdf(): Promise<Uint8Array> {
   const doc = await PDFDocument.create()
   const { font, bold } = await fonts(doc)

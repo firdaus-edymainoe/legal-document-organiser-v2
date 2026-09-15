@@ -44,11 +44,23 @@ export function cwToCcw(rotateCw: Rotation): Rotation {
 }
 
 /**
- * Acrobat `/Rotate` is clockwise on the page. Baking that into a `/Rotate 0`
- * sheet via pdf-lib's CCW `drawPage` needs the inverse (90↔270).
+ * Visible text angle in clockwise degrees (same convention as `/Rotate`).
+ * pdf.js content transforms are counter-clockwise; Acrobat `/Rotate` is clockwise.
+ */
+export function viewerTextAngle(
+  contentCcw: Rotation,
+  sourceRotateCw: Rotation,
+): Rotation {
+  return addRotation(sourceRotateCw, cwToCcw(contentCcw))
+}
+
+/**
+ * Acrobat `/Rotate` is already the clockwise bake angle. `placementOnA4`
+ * converts that to pdf-lib's CCW `drawPage` (once). Do not invert here —
+ * doing so 90↔270's the page 180° off.
  */
 export function flattenViewerRotation(sourceRotateCw: Rotation): Rotation {
-  return cwToCcw(sourceRotateCw)
+  return sourceRotateCw
 }
 
 export type A4Placement = {

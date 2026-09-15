@@ -16,7 +16,10 @@ import {
   originShiftedCropPdf,
   portraitA4Pdf,
   rotate180Pdf,
+  rotate270LandscapePdf,
+  rotate90PortraitPdf,
 } from "./fixtures"
+import { pageBands, assertUprightAgainstSource } from "./orientation"
 
 async function assertCanonical(bytes: Uint8Array) {
   const doc = await PDFDocument.load(bytes)
@@ -82,6 +85,39 @@ describe("kernel fixtures", () => {
       planDocument(analysis.pages, "letterbox"),
     )
     await assertCanonical(canonical)
+  })
+
+  it("bakes /Rotate 270 to match the viewer, not 180° off", async () => {
+    const bytes = await rotate270LandscapePdf()
+    const source = await pageBands(bytes)
+    expect(source.top).toMatch(/HEADER-270/)
+    expect(source.bottom).toMatch(/FOOTER-270/)
+
+    const analysis = await analyzePdf(bytes)
+    expect(analysis.pages[0]?.sourceRotation).toBe(270)
+    const [planned] = planDocument(analysis.pages, "letterbox")
+    expect(planned).toBeDefined()
+    const canonical = await normalizeDocument(bytes, [{ ...planned!, rotate: 0 }])
+    await assertCanonical(canonical)
+
+    const baked = await pageBands(canonical)
+    expect(baked.top).toMatch(/HEADER-270/)
+    expect(baked.bottom).toMatch(/FOOTER-270/)
+    expect(baked.top).not.toMatch(/FOOTER-270/)
+  })
+
+  it("keeps /Rotate 90 portrait text upright, not 180° off", async () => {
+    const bytes = await rotate90PortraitPdf()
+    const source = await pageBands(bytes)
+    expect(source.top).toMatch(/HEADER-90/)
+
+    const ingested = await ingestPdf(bytes, { landscapePolicy: "letterbox" })
+    expect(ingested.analysis.pages[0]?.sourceRotation).toBe(90)
+    await assertCanonical(ingested.canonical)
+
+    const baked = await pageBands(ingested.canonical)
+    expect(baked.top).toMatch(/HEADER-90/)
+    expect(baked.top).not.toMatch(/FOOTER-90/)
   })
 
   it("letterboxes landscape upright text into portrait A4", async () => {

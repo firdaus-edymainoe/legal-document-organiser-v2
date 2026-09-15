@@ -31,6 +31,7 @@ export {
   normalizeRotation,
   placementOnA4,
   toArrayBuffer,
+  viewerTextAngle,
 } from "./geometry"
 
 export { analyzePdf } from "./analyze"
