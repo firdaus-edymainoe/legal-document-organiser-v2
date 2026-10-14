@@ -1,7 +1,13 @@
 import { create } from "zustand"
 import { toast } from "sonner"
 
-import { addRotation, sortByFilename, type Rotation } from "@/pdf-kernel"
+import {
+  DEFAULT_NUMBER_STYLE,
+  addRotation,
+  sortByFilename,
+  type NumberStyle,
+  type Rotation,
+} from "@/pdf-kernel"
 import { analyzeSource, type PageAnalysis } from "@/engine/analyze"
 import {
   openSource,
@@ -872,6 +878,20 @@ export function setExportState(exportState: ExportState) {
 
 /* ───────────────────────── hydrate ───────────────────────── */
 
+/** Sessions saved before number fonts had a size preset (S/M/L). */
+const LEGACY_SIZES = { small: 11, medium: 16, large: 26 } as const
+
+function withNumberStyle(settings: object): object {
+  const { numberSize, ...rest } = settings as {
+    numberSize?: unknown
+    numberStyle?: NumberStyle
+  }
+  if (rest.numberStyle || typeof numberSize !== "string") return rest
+  if (!(numberSize in LEGACY_SIZES)) return rest
+  const size = LEGACY_SIZES[numberSize as keyof typeof LEGACY_SIZES]
+  return { ...rest, numberStyle: { ...DEFAULT_NUMBER_STYLE, size } }
+}
+
 export async function hydrate() {
   try {
     const saved = await loadSaved()
@@ -903,11 +923,17 @@ export async function hydrate() {
       const workspaces: Workspaces = {
         bundle: prune({
           ...saved.workspaces.bundle,
-          settings: { ...DEFAULT_BUNDLE, ...saved.workspaces.bundle.settings },
+          settings: {
+            ...DEFAULT_BUNDLE,
+            ...withNumberStyle(saved.workspaces.bundle.settings),
+          },
         }),
         fixer: prune({
           ...saved.workspaces.fixer,
-          settings: { ...DEFAULT_FIXER, ...saved.workspaces.fixer.settings },
+          settings: {
+            ...DEFAULT_FIXER,
+            ...withNumberStyle(saved.workspaces.fixer.settings),
+          },
         }),
       }
       set({ tool: saved.tool, workspaces, sources, ready: true })

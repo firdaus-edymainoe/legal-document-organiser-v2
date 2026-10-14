@@ -1,12 +1,6 @@
 import { rgb, type PDFFont, type PDFPage } from "pdf-lib"
 
-import { A4, type NumberSize } from "./types"
-
-export const NUMBER_SIZES: Record<NumberSize, number> = {
-  small: 11,
-  medium: 16,
-  large: 26,
-}
+import { A4 } from "./types"
 
 /** Distance from the top and right edges to the number's box. */
 export const STAMP_MARGIN_PT = 22
@@ -19,9 +13,8 @@ export function stampPageNumber(
   page: PDFPage,
   n: number,
   font: PDFFont,
-  size: NumberSize = "medium"
+  fontSize: number
 ): { x: number; y: number; width: number; height: number } {
-  const fontSize = NUMBER_SIZES[size]
   const label = String(n)
   const textWidth = font.widthOfTextAtSize(label, fontSize)
   const capHeight = font.heightAtSize(fontSize, { descender: false })

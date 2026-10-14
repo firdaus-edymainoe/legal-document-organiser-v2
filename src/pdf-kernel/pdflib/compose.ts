@@ -16,7 +16,13 @@ import {
   placementOnA4,
 } from "../geometry"
 import { stampPageNumber } from "../stamp"
-import { A4, type Box, type ComposeRequest, type SheetSpec } from "../types"
+import {
+  A4,
+  type Box,
+  type ComposeRequest,
+  type NumberFont,
+  type SheetSpec,
+} from "../types"
 import { flattenAnnotations } from "./annotations"
 import { LOAD_OPTIONS, embedFromSource, type Embedded } from "./embed"
 
@@ -37,6 +43,12 @@ function vectorKey(content: {
       ].join(",")
     : "-"
   return `${content.sourceId}:${content.pageIndex}:${crop}`
+}
+
+const NUMBER_FONTS: Record<NumberFont, StandardFonts> = {
+  helvetica: StandardFonts.Helvetica,
+  times: StandardFonts.TimesRoman,
+  courier: StandardFonts.Courier,
 }
 
 function drawTab(page: PDFPage, label: string, bold: PDFFont) {
@@ -78,7 +90,7 @@ export async function composeSheets(
   if (request.title) out.setTitle(request.title)
   out.setProducer("Legal Organiser")
   out.setCreator("Legal Organiser")
-  const font = await out.embedFont(StandardFonts.Helvetica)
+  const numberFont = await out.embedFont(NUMBER_FONTS[request.numberStyle.font])
   const bold = await out.embedFont(StandardFonts.HelveticaBold)
 
   // Load each source once and embed every page variant it contributes in one
@@ -159,7 +171,7 @@ export async function composeSheets(
 
     tint(page, sheet.color)
     if (sheet.number !== null)
-      stampPageNumber(page, sheet.number, font, request.numberSize)
+      stampPageNumber(page, sheet.number, numberFont, request.numberStyle.size)
     onProgress?.(i + 1, total)
   }
 

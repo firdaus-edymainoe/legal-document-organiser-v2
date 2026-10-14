@@ -1,4 +1,8 @@
-import type { NumberSize, Rotation } from "@/pdf-kernel"
+import {
+  DEFAULT_NUMBER_STYLE,
+  type NumberStyle,
+  type Rotation,
+} from "@/pdf-kernel"
 import type { SourceAnalysis } from "@/engine/analyze"
 
 export type Tool = "bundle" | "fixer"
@@ -49,14 +53,14 @@ export type BundleSettings = {
   numberPages: boolean
   numberCover: boolean
   startNumber: number
-  numberSize: NumberSize
+  numberStyle: NumberStyle
   fileName: string
 }
 
 export type FixerSettings = {
   numberPages: boolean
   startNumber: number
-  numberSize: NumberSize
+  numberStyle: NumberStyle
   output: "merged" | "separate"
   fileName: string
 }
@@ -77,14 +81,14 @@ export const DEFAULT_BUNDLE: BundleSettings = {
   numberPages: true,
   numberCover: true,
   startNumber: 1,
-  numberSize: "large",
+  numberStyle: { ...DEFAULT_NUMBER_STYLE },
   fileName: "Bundle of Authorities",
 }
 
 export const DEFAULT_FIXER: FixerSettings = {
   numberPages: false,
   startNumber: 1,
-  numberSize: "large",
+  numberStyle: { ...DEFAULT_NUMBER_STYLE },
   output: "merged",
   fileName: "Combined",
 }

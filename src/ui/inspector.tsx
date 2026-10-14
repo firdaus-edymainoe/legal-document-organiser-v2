@@ -12,7 +12,11 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import type { NumberSize } from "@/pdf-kernel"
+import {
+  NUMBER_SIZE_RANGE,
+  type NumberFont,
+  type NumberStyle,
+} from "@/pdf-kernel"
 import { exportProblems } from "@/state/export"
 import {
   RASTER_REASON_TEXT,
@@ -320,11 +324,67 @@ function Segmented<T extends string>({
   )
 }
 
-const SIZES: { value: NumberSize; label: string }[] = [
-  { value: "small", label: "S" },
-  { value: "medium", label: "M" },
-  { value: "large", label: "L" },
+const FONTS: { value: NumberFont; label: string }[] = [
+  { value: "helvetica", label: "Helvetica" },
+  { value: "times", label: "Times" },
+  { value: "courier", label: "Courier" },
 ]
+
+/** Point size. Commits only valid sizes, so typing "12" never clamps to 6. */
+function NumberSizeInput({
+  value,
+  onChange,
+}: {
+  value: number
+  onChange: (n: number) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const { min, max } = NUMBER_SIZE_RANGE
+  return (
+    <Input
+      type="number"
+      min={min}
+      max={max}
+      value={draft ?? value}
+      onChange={(e) => {
+        setDraft(e.target.value)
+        const n = Number(e.target.value)
+        if (e.target.value !== "" && Number.isFinite(n) && n >= min && n <= max)
+          onChange(n)
+      }}
+      onBlur={() => setDraft(null)}
+      className="tabular h-7 w-16 text-right"
+      aria-label="Number size in points"
+    />
+  )
+}
+
+function NumberStyleRows({
+  value,
+  onChange,
+}: {
+  value: NumberStyle
+  onChange: (style: NumberStyle) => void
+}) {
+  return (
+    <>
+      <Row label="Number font">
+        <Segmented
+          label="Number font"
+          value={value.font}
+          options={FONTS}
+          onChange={(font) => onChange({ ...value, font })}
+        />
+      </Row>
+      <Row label="Number size" hint="Points, 6 to 72">
+        <NumberSizeInput
+          value={value.size}
+          onChange={(size) => onChange({ ...value, size })}
+        />
+      </Row>
+    </>
+  )
+}
 
 function NumberStart({
   value,
@@ -475,14 +535,10 @@ function BundleOutput() {
                 onChange={(n) => updateBundleSettings({ startNumber: n })}
               />
             </Row>
-            <Row label="Number size">
-              <Segmented
-                label="Number size"
-                value={settings.numberSize}
-                options={SIZES}
-                onChange={(v) => updateBundleSettings({ numberSize: v })}
-              />
-            </Row>
+            <NumberStyleRows
+              value={settings.numberStyle}
+              onChange={(numberStyle) => updateBundleSettings({ numberStyle })}
+            />
           </>
         ) : null}
         <Row label="File name">
@@ -555,14 +611,10 @@ function FixerOutput() {
                 onChange={(n) => updateFixerSettings({ startNumber: n })}
               />
             </Row>
-            <Row label="Number size">
-              <Segmented
-                label="Number size"
-                value={settings.numberSize}
-                options={SIZES}
-                onChange={(v) => updateFixerSettings({ numberSize: v })}
-              />
-            </Row>
+            <NumberStyleRows
+              value={settings.numberStyle}
+              onChange={(numberStyle) => updateFixerSettings({ numberStyle })}
+            />
           </>
         ) : null}
       </section>

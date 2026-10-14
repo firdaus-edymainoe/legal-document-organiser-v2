@@ -37,7 +37,7 @@ export {
   vectorCopyFailed,
   type RenderComparison,
 } from "./verify"
-export { NUMBER_SIZES, STAMP_MARGIN_PT, stampPageNumber } from "./stamp"
+export { STAMP_MARGIN_PT, stampPageNumber } from "./stamp"
 export { parseFilename, compareSortKeys, sortByFilename } from "./filename-sort"
 export { zip, crc32, type ZipEntry } from "./zip"
 export { imagePlacements, scanBox, type ImageOps, type Placement } from "./scan"

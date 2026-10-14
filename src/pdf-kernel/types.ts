@@ -72,11 +72,21 @@ export type SheetSpec = {
   number: number | null
 }
 
-export type NumberSize = "small" | "medium" | "large"
+/** Typefaces for page numbers (the standard PDF fonts, always available). */
+export type NumberFont = "helvetica" | "times" | "courier"
+
+export type NumberStyle = {
+  font: NumberFont
+  /** Point size of the number. */
+  size: number
+}
+
+export const DEFAULT_NUMBER_STYLE: NumberStyle = { font: "helvetica", size: 26 }
+export const NUMBER_SIZE_RANGE = { min: 6, max: 72 } as const
 
 export type ComposeRequest = {
   sources: Record<string, Uint8Array>
   sheets: SheetSpec[]
-  numberSize: NumberSize
+  numberStyle: NumberStyle
   title?: string
 }

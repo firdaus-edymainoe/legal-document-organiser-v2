@@ -174,7 +174,7 @@ async function normalise(bytes: Uint8Array, extra?: Rotation) {
   const out = await composeSheets({
     sources: { s: bytes },
     sheets,
-    numberSize: "medium",
+    numberStyle: { font: "helvetica", size: 16 },
   })
   return { out, probe, text, rotate }
 }
@@ -284,7 +284,7 @@ describe("compose (vector)", () => {
         },
         { content: { kind: "blank" }, rotate: 0, color: null, number: null },
       ],
-      numberSize: "large",
+      numberStyle: { font: "helvetica", size: 26 },
     })
     await assertA4(out)
     const doc = await openPdf(out)

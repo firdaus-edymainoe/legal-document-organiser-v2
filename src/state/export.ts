@@ -90,7 +90,7 @@ async function buildFile(
     {
       sources,
       sheets,
-      numberSize: settings.numberSize,
+      numberStyle: settings.numberStyle,
       title: file.name.replace(/\.pdf$/i, ""),
     },
     (done, total) => report(`Assembling ${file.name}`, done, total)
