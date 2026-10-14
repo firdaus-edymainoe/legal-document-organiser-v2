@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   DndContext,
   KeyboardSensor,
@@ -22,7 +22,9 @@ import {
   Check,
   CircleCheck,
   FilePlus2,
+  GalleryVertical,
   Image as ImageIcon,
+  LayoutGrid,
   Loader2,
   Palette,
   RotateCcw,
@@ -67,6 +69,7 @@ import {
 } from "@/state/store"
 import type { Tool } from "@/state/types"
 
+import { AutofixStrip } from "./autofix"
 import { ColorPicker } from "./color-picker"
 import { pickPdfs } from "./files"
 import { sheetSpec } from "./specs"
@@ -74,7 +77,10 @@ import { SheetImage } from "./thumb"
 
 type Filter = "all" | "review" | "edited" | "raster"
 type Zoom = "s" | "m" | "l"
+type View = "grid" | "preview"
 const ZOOM_WIDTH: Record<Zoom, number> = { s: 116, m: 164, l: 236 }
+/** Preview pages are shown large enough to read a filed page. */
+const PREVIEW_WIDTH: Record<Zoom, number> = { s: 440, m: 580, l: 720 }
 
 function bucket(width: number) {
   const dpr = Math.min(2, window.devicePixelRatio || 1)
@@ -189,11 +195,7 @@ function PageCard({
         )}
       >
         <SheetImage spec={spec} alt={label} priority={focused ? 5 : 0} />
-        {!page.ready ? (
-          <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-sheet/90 py-1 text-[10px] text-ink-soft">
-            <Loader2 className="size-3 animate-spin" /> Checking
-          </span>
-        ) : null}
+        {!page.ready ? <PendingBadge /> : null}
         <span
           className={cn(
             "absolute top-1.5 left-2 flex size-4 items-center justify-center rounded border bg-sheet transition-opacity",
@@ -209,10 +211,154 @@ function PageCard({
           {selected ? <Check className="size-3" strokeWidth={3} /> : null}
         </span>
       </div>
-      <div className="tabular flex w-full items-center justify-between px-0.5 text-[11px] text-ink-soft">
-        <span className={cn(focused && "font-semibold text-ink")}>{label}</span>
+      <PageCaption page={page} label={label} focused={focused} />
+    </div>
+  )
+}
+
+function PendingBadge() {
+  return (
+    <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-registry-soft py-1 text-[10px] font-medium text-registry">
+      <Loader2 className="size-3 animate-spin" /> Auto-fixing
+    </span>
+  )
+}
+
+function PageCaption({
+  page,
+  label,
+  focused,
+}: {
+  page: ResolvedPage
+  label: string
+  focused: boolean
+}) {
+  return (
+    <div className="tabular flex w-full items-center justify-between gap-2 px-0.5 text-[11px] text-ink-soft">
+      <span className={cn("truncate", focused && "font-semibold text-ink")}>
+        {label}
+      </span>
+      <span className="flex items-center gap-1.5">
+        {page.flags.includes("autofixed") ? (
+          <span className="rounded bg-registry-soft px-1 font-medium text-registry">
+            Auto-turned
+          </span>
+        ) : null}
         <FlagIcons page={page} />
+      </span>
+    </div>
+  )
+}
+
+/**
+ * One page at document size, for reading the file top to bottom. Clicking
+ * selects it, as in the grid; pages are not reordered in this view.
+ */
+function PreviewPage({
+  tool,
+  page,
+  label,
+  width,
+  selected,
+  focused,
+}: {
+  tool: Tool
+  page: ResolvedPage
+  label: string
+  width: number
+  selected: boolean
+  focused: boolean
+}) {
+  const sources = useStore((s) => s.sources)
+  const spec = sheetSpec(page, sources, bucket(width))
+  const review = page.flags.includes("review")
+
+  return (
+    <figure
+      data-item-id={page.item.id}
+      className="flex w-full flex-col gap-1.5"
+      style={{ maxWidth: width }}
+    >
+      <div
+        role="button"
+        tabIndex={0}
+        aria-pressed={selected}
+        aria-label={`${label}${review ? ", needs checking" : ""}`}
+        onClick={(e) =>
+          clickItem(
+            tool,
+            page.item.id,
+            e.shiftKey ? "range" : e.metaKey || e.ctrlKey ? "toggle" : "single"
+          )
+        }
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            clickItem(tool, page.item.id, e.shiftKey ? "range" : "toggle")
+          }
+        }}
+        className={cn(
+          "sheet relative aspect-[595/842] w-full cursor-pointer overflow-hidden rounded-[2px] outline-none",
+          selected && "ring-2 ring-registry ring-offset-2 ring-offset-desk",
+          !selected &&
+            focused &&
+            "ring-2 ring-ink/40 ring-offset-2 ring-offset-desk",
+          review &&
+            !selected &&
+            "ring-2 ring-caution ring-offset-2 ring-offset-desk"
+        )}
+      >
+        <SheetImage spec={spec} alt={label} priority={focused ? 5 : 0} />
+        {!page.ready ? <PendingBadge /> : null}
       </div>
+      <figcaption>
+        <PageCaption page={page} label={label} focused={focused} />
+      </figcaption>
+    </figure>
+  )
+}
+
+/** The whole file, top to bottom, with the focused page in view on open. */
+function PreviewList({
+  tool,
+  pages,
+  width,
+  selectedIds,
+  focusId,
+}: {
+  tool: Tool
+  pages: ResolvedPage[]
+  width: number
+  selectedIds: Set<string>
+  focusId: string | null
+}) {
+  const listRef = useRef<HTMLDivElement>(null)
+  const openedAt = useRef(focusId)
+
+  useEffect(() => {
+    // Only on open: after that the scroll position belongs to the reader.
+    const id = openedAt.current
+    if (!id) return
+    listRef.current
+      ?.querySelector(`[data-item-id="${id}"]`)
+      ?.scrollIntoView({ block: "start" })
+  }, [])
+
+  return (
+    <div ref={listRef} className="flex flex-col items-center gap-10">
+      {pages.map((page, index) => (
+        <PreviewPage
+          key={page.item.id}
+          tool={tool}
+          page={page}
+          label={
+            page.item.kind === "blank" ? `${index + 1} · blank` : `${index + 1}`
+          }
+          width={width}
+          selected={selectedIds.has(page.item.id)}
+          focused={focusId === page.item.id}
+        />
+      ))}
     </div>
   )
 }
@@ -428,6 +574,7 @@ export function SheetGrid({ tool }: { tool: Tool }) {
   const tabTemplate = useStore((s) => s.workspaces.bundle.settings.tabLabel)
   const [filter, setFilter] = useState<Filter>("all")
   const [zoom, setZoom] = useState<Zoom>("m")
+  const [view, setView] = useState<View>("grid")
   const doc = docs.find((d) => d.id === selection.docId) ?? docs[0]
 
   const pages = useMemo(
@@ -513,52 +660,83 @@ export function SheetGrid({ tool }: { tool: Tool }) {
             {doc.title}
           </h1>
         </div>
-        <div
-          className="flex shrink-0 items-center gap-1 rounded-md border border-rule bg-sheet p-0.5"
-          role="group"
-          aria-label="Thumbnail size"
-        >
-          {(["s", "m", "l"] as Zoom[]).map((z) => (
-            <button
-              key={z}
-              type="button"
-              aria-pressed={zoom === z}
-              onClick={() => setZoom(z)}
-              className={cn(
-                "rounded px-2 py-0.5 text-xs font-medium text-ink-soft",
-                zoom === z && "bg-desk text-ink"
-              )}
-            >
-              {z.toUpperCase()}
-            </button>
-          ))}
+        <div className="flex shrink-0 items-center gap-2">
+          <div
+            className="flex items-center gap-1 rounded-md border border-rule bg-sheet p-0.5"
+            role="group"
+            aria-label="View"
+          >
+            {(
+              [
+                { key: "grid", label: "Grid", Icon: LayoutGrid },
+                { key: "preview", label: "Preview", Icon: GalleryVertical },
+              ] as const
+            ).map(({ key, label, Icon }) => (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={view === key}
+                onClick={() => setView(key)}
+                className={cn(
+                  "flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-ink-soft",
+                  view === key && "bg-desk text-ink"
+                )}
+              >
+                <Icon className="size-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+          <div
+            className="flex items-center gap-1 rounded-md border border-rule bg-sheet p-0.5"
+            role="group"
+            aria-label="Thumbnail size"
+          >
+            {(["s", "m", "l"] as Zoom[]).map((z) => (
+              <button
+                key={z}
+                type="button"
+                aria-pressed={zoom === z}
+                onClick={() => setZoom(z)}
+                className={cn(
+                  "rounded px-2 py-0.5 text-xs font-medium text-ink-soft",
+                  zoom === z && "bg-desk text-ink"
+                )}
+              >
+                {z.toUpperCase()}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-      <div className="flex items-center gap-1.5 px-6 pb-3">
-        {chips
-          .filter(
-            (c) => c.key === "all" || (c.count ?? 0) > 0 || filter === c.key
-          )
-          .map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              aria-pressed={filter === c.key}
-              onClick={() => setFilter(c.key)}
-              className={cn(
-                "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                filter === c.key
-                  ? "border-ink bg-ink text-white"
-                  : cn(
-                      "border-rule bg-sheet hover:border-ink-soft/50",
-                      c.tone ?? "text-ink-soft"
-                    )
-              )}
-            >
-              {c.label} <span className="tabular opacity-70">{c.count}</span>
-            </button>
-          ))}
-      </div>
+      {view === "grid" ? (
+        <div className="flex items-center gap-1.5 px-6 pb-3">
+          {chips
+            .filter(
+              (c) => c.key === "all" || (c.count ?? 0) > 0 || filter === c.key
+            )
+            .map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                aria-pressed={filter === c.key}
+                onClick={() => setFilter(c.key)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                  filter === c.key
+                    ? "border-ink bg-ink text-white"
+                    : cn(
+                        "border-rule bg-sheet hover:border-ink-soft/50",
+                        c.tone ?? "text-ink-soft"
+                      )
+                )}
+              >
+                {c.label} <span className="tabular opacity-70">{c.count}</span>
+              </button>
+            ))}
+        </div>
+      ) : null}
+      <AutofixStrip tool={tool} />
       <Toolbar tool={tool} targets={targets} />
       <div
         className="scroll-thin min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-10"
@@ -566,7 +744,16 @@ export function SheetGrid({ tool }: { tool: Tool }) {
           if (e.target === e.currentTarget) clearSelection(tool)
         }}
       >
-        {shown.length === 0 ? (
+        {view === "preview" ? (
+          <PreviewList
+            key={doc.id}
+            tool={tool}
+            pages={pages}
+            width={PREVIEW_WIDTH[zoom]}
+            selectedIds={selectedIds}
+            focusId={selection.focusId}
+          />
+        ) : shown.length === 0 ? (
           <p className="pt-10 text-center text-sm text-ink-soft">
             No pages match this filter.
           </p>

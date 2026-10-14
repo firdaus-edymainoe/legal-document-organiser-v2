@@ -69,6 +69,7 @@ export function resolvePage(item: PageItem, sources: Sources): ResolvedPage {
   const flags: PageFlag[] = []
   if (analysis.detection.review && item.turn === 0 && !item.checked)
     flags.push("review")
+  if (analysis.autoRotate !== 0) flags.push("autofixed")
   if (rotate !== 0 || analysis.rotate !== 0) flags.push("rotated")
   const placed = displayedSize(analysis.width, analysis.height, rotate)
   const isA4 =
@@ -107,6 +108,23 @@ export type IndexRow = {
   tab: number
   title: string
   page: number | null
+}
+
+/** "turned right" etc. for the auto-fix label. */
+export function turnPhrase(turn: Rotation): string {
+  if (turn === 90) return "turned right"
+  if (turn === 270) return "turned left"
+  return "turned upside down"
+}
+
+/** Source ids the documents of one workspace draw their pages from. */
+export function sourceIdsOf(docs: DocRecord[]): string[] {
+  const ids = new Set<string>()
+  for (const doc of docs) {
+    if (doc.sourceId) ids.add(doc.sourceId)
+    for (const item of doc.items) if (item.sourceId) ids.add(item.sourceId)
+  }
+  return [...ids]
 }
 
 export type PlannedFile = { name: string; sheets: PlannedSheet[] }

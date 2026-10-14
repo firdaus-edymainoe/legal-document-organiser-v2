@@ -23,6 +23,7 @@ import {
   BookOpen,
   GripVertical,
   KeyRound,
+  Loader2,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -186,6 +187,12 @@ function DocRow({
                 {doc.items.length} page{doc.items.length === 1 ? "" : "s"}
               </span>
             )}
+            {status.busy ? (
+              <span className="inline-flex items-center gap-1 rounded bg-registry-soft px-1.5 font-medium text-registry">
+                <Loader2 className="size-3 animate-spin" />
+                Auto-fixing
+              </span>
+            ) : null}
             {status.review > 0 ? (
               <span className="inline-flex items-center gap-1 rounded bg-caution-soft px-1.5 font-medium text-caution">
                 <AlertTriangle className="size-3" />

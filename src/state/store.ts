@@ -2,7 +2,7 @@ import { create } from "zustand"
 import { toast } from "sonner"
 
 import { addRotation, sortByFilename, type Rotation } from "@/pdf-kernel"
-import { analyzeSource } from "@/engine/analyze"
+import { analyzeSource, type PageAnalysis } from "@/engine/analyze"
 import {
   openSource,
   PasswordCancelled,
@@ -52,6 +52,14 @@ export type ExportState =
 
 export type PasswordPrompt = { fileName: string; incorrect: boolean }
 
+/** A page the auto-fix turned, shown as it happens. */
+export type AutoFix = {
+  id: string
+  sourceId: string
+  pageIndex: number
+  turn: Rotation
+}
+
 type State = {
   ready: boolean
   tool: Tool
@@ -61,6 +69,8 @@ type State = {
   history: Record<Tool, History>
   exportState: ExportState
   passwordPrompt: PasswordPrompt | null
+  /** Newest first. Not persisted: it only describes the current analysis. */
+  fixes: AutoFix[]
 }
 
 const emptySelection = (): Selection => ({
@@ -86,6 +96,7 @@ export const useStore = create<State>(() => ({
   },
   exportState: { phase: "idle" },
   passwordPrompt: null,
+  fixes: [],
 }))
 
 const set = useStore.setState
@@ -135,8 +146,13 @@ export function answerPassword(password: string | null) {
 
 /* ───────────────────────── analysis queue ───────────────────────── */
 
+/** Files analysed at the same time. Each one is its own pdf.js document. */
+const ANALYSIS_CONCURRENCY = 4
+/** How many auto-fixes the activity line remembers. */
+const FIX_LOG_LIMIT = 20
+
 const queue: string[] = []
-let running = false
+const running = new Set<string>()
 const stopped = new Set<string>()
 
 function patchSource(id: string, patch: Partial<SourceRecord>) {
@@ -148,63 +164,92 @@ function patchSource(id: string, patch: Partial<SourceRecord>) {
 }
 
 function enqueue(id: string) {
-  if (!queue.includes(id)) queue.push(id)
-  void pump()
+  if (!queue.includes(id) && !running.has(id)) queue.push(id)
+  pump()
 }
 
-async function pump() {
-  if (running) return
-  running = true
-  try {
-    while (queue.length > 0) {
-      const id = queue.shift()!
-      if (!get().sources[id]) continue
-      patchSource(id, { status: "analyzing", progress: 0, error: undefined })
-      let lastUpdate = 0
-      try {
-        const analysis = await analyzeSource(
-          id,
-          (done, total) => {
-            const now = Date.now()
-            if (done === total || now - lastUpdate > 150) {
-              lastUpdate = now
-              patchSource(id, { progress: done / total })
-            }
-          },
-          () => stopped.has(id) || !get().sources[id]
-        )
-        if (!get().sources[id]) continue
-        patchSource(id, { status: "ready", progress: 1, analysis })
-        fillEmptyDocs(id, analysis.pageCount)
-        const review = analysis.pages.filter((p) => p.detection.review).length
-        if (review > 0) {
-          const name = get().sources[id]?.fileName ?? "A file"
-          toast.message(
-            `${name}: ${review} page${review === 1 ? "" : "s"} to check`,
-            {
-              description: "Orientation could not be decided with confidence.",
-            }
-          )
-        }
-      } catch (err) {
-        if (!get().sources[id] || stopped.has(id)) continue
-        if (err instanceof PasswordCancelled) {
-          patchSource(id, { status: "locked", progress: 0, error: err.message })
-        } else {
-          const message = err instanceof Error ? err.message : String(err)
-          patchSource(id, { status: "error", progress: 0, error: message })
-          toast.error(
-            `${get().sources[id]?.fileName ?? "File"} could not be read`,
-            {
-              description: message,
-            }
-          )
-        }
-      }
+function pump() {
+  while (running.size < ANALYSIS_CONCURRENCY && queue.length > 0) {
+    const id = queue.shift()!
+    running.add(id)
+    void analyseOne(id).finally(() => {
+      running.delete(id)
       schedulePersist()
+      pump()
+    })
+  }
+}
+
+function recordFix(sourceId: string, page: PageAnalysis) {
+  const fix: AutoFix = {
+    id: newId(),
+    sourceId,
+    pageIndex: page.index,
+    turn: page.autoRotate,
+  }
+  set((state) => ({ fixes: [fix, ...state.fixes].slice(0, FIX_LOG_LIMIT) }))
+}
+
+async function analyseOne(id: string) {
+  if (!get().sources[id]) return
+  patchSource(id, {
+    status: "analyzing",
+    progress: 0,
+    error: undefined,
+    analysis: undefined,
+  })
+  let lastUpdate = 0
+  try {
+    const analysis = await analyzeSource(id, {
+      shouldStop: () => stopped.has(id) || !get().sources[id],
+      onPage: (page, soFar) => {
+        if (page.autoRotate !== 0) recordFix(id, page)
+        // Throttled: pages can finish faster than the UI should repaint.
+        const now = Date.now()
+        if (now - lastUpdate > 150) {
+          lastUpdate = now
+          const done = soFar.pages.filter(Boolean).length
+          patchSource(id, { progress: done / soFar.pageCount, analysis: soFar })
+        }
+      },
+    })
+    if (!get().sources[id]) return
+    patchSource(id, { status: "ready", progress: 1, analysis })
+    fillEmptyDocs(id, analysis.pageCount)
+    const review = analysis.pages.filter((p) => p.detection.review).length
+    if (review > 0) {
+      const name = get().sources[id]?.fileName ?? "A file"
+      toast.message(
+        `${name}: ${review} page${review === 1 ? "" : "s"} to check`,
+        {
+          description: "Orientation could not be decided with confidence.",
+        }
+      )
     }
-  } finally {
-    running = false
+  } catch (err) {
+    if (!get().sources[id] || stopped.has(id)) return
+    if (err instanceof PasswordCancelled) {
+      patchSource(id, {
+        status: "locked",
+        progress: 0,
+        error: err.message,
+        analysis: undefined,
+      })
+    } else {
+      const message = err instanceof Error ? err.message : String(err)
+      patchSource(id, {
+        status: "error",
+        progress: 0,
+        error: message,
+        analysis: undefined,
+      })
+      toast.error(
+        `${get().sources[id]?.fileName ?? "File"} could not be read`,
+        {
+          description: message,
+        }
+      )
+    }
   }
 }
 

@@ -8,7 +8,9 @@ import {
   planFixer,
   resolvePage,
   safeFileName,
+  sourceIdsOf,
   tabLabel,
+  turnPhrase,
 } from "./plan"
 import {
   DEFAULT_BUNDLE,
@@ -217,6 +219,33 @@ describe("page resolution", () => {
     expect(turned.flags).toContain("edited")
   })
 
+  it("flags pages the auto-fix turned, but not pages it left alone", () => {
+    const srcs = {
+      s: source("s", [
+        analysisPage(0, { autoRotate: 90 }),
+        analysisPage(1, { autoRotate: 0 }),
+      ]),
+    }
+    const [p0, p1] = items("s", 2)
+    expect(resolvePage(p0, srcs).flags).toContain("autofixed")
+    expect(resolvePage(p1, srcs).flags).not.toContain("autofixed")
+  })
+
+  it("treats a page whose analysis has not landed yet as pending", () => {
+    // Pages finish out of order, so page 0 can be a hole while page 1 is done.
+    const pages: PageAnalysis[] = []
+    pages[1] = analysisPage(1, { autoRotate: 90 })
+    const srcs = {
+      s: {
+        ...source("s", []),
+        analysis: { pageCount: 2, encrypted: false, pages },
+      },
+    }
+    const [p0, p1] = items("s", 2)
+    expect(resolvePage(p0, srcs).ready).toBe(false)
+    expect(resolvePage(p1, srcs).ready).toBe(true)
+  })
+
   it("rasterises protected pages and pages the user asks for", () => {
     const srcs = {
       s: source("s", [
@@ -235,5 +264,46 @@ describe("page resolution", () => {
   it("cleans file names", () => {
     expect(safeFileName('a/b:c*"d.pdf', "x")).toBe("a b c d.pdf")
     expect(safeFileName("   ", "Fallback")).toBe("Fallback.pdf")
+  })
+})
+
+describe("auto-fix labels", () => {
+  it("names the turn in words", () => {
+    expect(turnPhrase(90)).toBe("turned right")
+    expect(turnPhrase(270)).toBe("turned left")
+    expect(turnPhrase(180)).toBe("turned upside down")
+  })
+
+  it("lists each file a workspace draws pages from once", () => {
+    const docs = [
+      {
+        id: "d1",
+        title: "A",
+        fileName: "a.pdf",
+        role: "document",
+        sourceId: "s1",
+        items: [
+          {
+            id: "i1",
+            kind: "page",
+            sourceId: "s1",
+            pageIndex: 0,
+            turn: 0,
+            color: null,
+            forceRaster: false,
+          },
+          {
+            id: "i2",
+            kind: "page",
+            sourceId: "s2",
+            pageIndex: 0,
+            turn: 0,
+            color: null,
+            forceRaster: false,
+          },
+        ],
+      },
+    ] as DocRecord[]
+    expect(sourceIdsOf(docs).sort()).toEqual(["s1", "s2"])
   })
 })

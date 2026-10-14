@@ -88,4 +88,10 @@ export const DEFAULT_FIXER: FixerSettings = {
 }
 
 export type PageFlag =
-  "review" | "rotated" | "scaled" | "raster" | "edited" | "pending"
+  | "review"
+  | "rotated"
+  | "autofixed"
+  | "scaled"
+  | "raster"
+  | "edited"
+  | "pending"
