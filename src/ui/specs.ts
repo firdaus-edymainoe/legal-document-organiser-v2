@@ -27,6 +27,7 @@ export function sheetSpec(
     pageIndex: item.pageIndex!,
     extra: page.rotate,
     color: item.color,
+    crop: page.crop,
     width,
   }
 }

@@ -239,6 +239,11 @@ function PageCaption({
         {label}
       </span>
       <span className="flex items-center gap-1.5">
+        {page.flags.includes("scan") ? (
+          <span className="rounded bg-registry-soft px-1 font-medium text-registry">
+            Scan
+          </span>
+        ) : null}
         {page.flags.includes("autofixed") ? (
           <span className="rounded bg-registry-soft px-1 font-medium text-registry">
             Auto-turned

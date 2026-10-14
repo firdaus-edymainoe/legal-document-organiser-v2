@@ -500,6 +500,12 @@ export function rasterPages(tool: Tool, on: boolean) {
   )
 }
 
+export function setFullPage(tool: Tool, on: boolean) {
+  editTargets(tool, (item) =>
+    item.kind === "blank" ? item : { ...item, fullPage: on }
+  )
+}
+
 export function markChecked(tool: Tool) {
   editTargets(tool, (item) => ({ ...item, checked: true }))
 }
@@ -511,6 +517,7 @@ export function resetPages(tool: Tool) {
     color: null,
     forceRaster: false,
     checked: false,
+    fullPage: false,
   }))
 }
 

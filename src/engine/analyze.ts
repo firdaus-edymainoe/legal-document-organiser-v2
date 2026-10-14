@@ -1,5 +1,8 @@
 import {
   bindingRotation,
+  imagePlacements,
+  type Box,
+  scanBox,
   compareRenders,
   decideOrientation,
   detectImageOrientation,
@@ -12,7 +15,13 @@ import {
 } from "@/pdf-kernel"
 import { pdfWorker } from "@/pdf-kernel/worker/client"
 
-import { closePdf, openPdf, type PDFDocumentProxy } from "./pdfjs"
+import {
+  closePdf,
+  openPdf,
+  pdfjs,
+  type PDFDocumentProxy,
+  type PDFPageProxy,
+} from "./pdfjs"
 import {
   SHEET_RATIO,
   frameGray,
@@ -37,6 +46,11 @@ export type PageAnalysis = {
   autoRotate: Rotation
   /** Why this page must be rasterised, or null for a vector copy. */
   raster: RasterReason | null
+  /**
+   * The part of the page a scan occupies, when it sits on only part of the
+   * page (e.g. a scan on the top-left of a Letter sheet). Null otherwise.
+   */
+  scan: Box | null
 }
 
 export type SourceAnalysis = {
@@ -54,6 +68,20 @@ const PAGE_CONCURRENCY = 3
 
 function yieldToUi(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+/** Where the page's images are drawn, and whether they form a partial scan. */
+async function scanOf(page: PDFPageProxy): Promise<Box | null> {
+  const lib = await pdfjs()
+  const { fnArray, argsArray } = await page.getOperatorList()
+  const [x0, y0, x1, y1] = page.view
+  const placements = imagePlacements(fnArray, argsArray, lib.OPS)
+  return scanBox(placements, {
+    x: x0,
+    y: y0,
+    width: x1 - x0,
+    height: y1 - y0,
+  })
 }
 
 export type AnalyzeHooks = {
@@ -91,6 +119,7 @@ export async function analyzeSource(
     const page = await doc.getPage(i + 1)
     const rotate = normalizeRotation(page.rotate)
     const shown = page.getViewport({ scale: 1 })
+    const scan = await scanOf(page)
 
     let text = { angle: null, chars: 0, share: 0 } as ReturnType<
       typeof textOrientation
@@ -155,6 +184,7 @@ export async function analyzeSource(
       detection,
       autoRotate,
       raster,
+      scan,
     }
   }
 

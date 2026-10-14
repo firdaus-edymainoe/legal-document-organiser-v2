@@ -1,4 +1,10 @@
-import { A4, addRotation, displayedSize, type Rotation } from "@/pdf-kernel"
+import {
+  A4,
+  addRotation,
+  displayedSize,
+  type Box,
+  type Rotation,
+} from "@/pdf-kernel"
 import type { PageAnalysis, RasterReason } from "@/engine/analyze"
 
 import type {
@@ -18,6 +24,8 @@ export type ResolvedPage = {
   rotate: Rotation
   raster: boolean
   rasterReason: RasterReason | "requested" | null
+  /** The scan area drawn on the sheet, or null for the whole page. */
+  crop: Box | null
   flags: PageFlag[]
   ready: boolean
 }
@@ -45,6 +53,7 @@ export function resolvePage(item: PageItem, sources: Sources): ResolvedPage {
       rotate: 0,
       raster: false,
       rasterReason: null,
+      crop: null,
       flags,
       ready: true,
     }
@@ -58,12 +67,14 @@ export function resolvePage(item: PageItem, sources: Sources): ResolvedPage {
       rotate: item.turn,
       raster: item.forceRaster,
       rasterReason: item.forceRaster ? "requested" : null,
+      crop: null,
       flags: ["pending"],
       ready: false,
     }
   }
 
   const rotate = addRotation(analysis.autoRotate, item.turn)
+  const crop = item.fullPage ? null : analysis.scan
   const rasterReason =
     analysis.raster ?? (item.forceRaster ? "requested" : null)
   const flags: PageFlag[] = []
@@ -71,7 +82,11 @@ export function resolvePage(item: PageItem, sources: Sources): ResolvedPage {
     flags.push("review")
   if (analysis.autoRotate !== 0) flags.push("autofixed")
   if (rotate !== 0 || analysis.rotate !== 0) flags.push("rotated")
-  const placed = displayedSize(analysis.width, analysis.height, rotate)
+  if (crop) flags.push("scan")
+  const shown = crop
+    ? { width: crop.width, height: crop.height }
+    : { width: analysis.width, height: analysis.height }
+  const placed = displayedSize(shown.width, shown.height, rotate)
   const isA4 =
     Math.abs(placed.width - A4.widthPt) < 3 &&
     Math.abs(placed.height - A4.heightPt) < 3
@@ -85,6 +100,7 @@ export function resolvePage(item: PageItem, sources: Sources): ResolvedPage {
     rotate,
     raster: rasterReason !== null,
     rasterReason,
+    crop,
     flags,
     ready: true,
   }
@@ -98,6 +114,8 @@ export type PlannedSheet =
       rotate: Rotation
       color: string | null
       raster: boolean
+      /** Scan area to draw instead of the whole page. */
+      crop: Box | null
       number: number | null
     }
   | { kind: "blank"; color: string | null; number: number | null }
@@ -155,6 +173,7 @@ function sheetFor(page: ResolvedPage, number: number | null): PlannedSheet {
     rotate: page.rotate,
     color: page.item.color,
     raster: page.raster,
+    crop: page.crop,
     number,
   }
 }

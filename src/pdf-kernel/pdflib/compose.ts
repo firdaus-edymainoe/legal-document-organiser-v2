@@ -16,9 +16,28 @@ import {
   placementOnA4,
 } from "../geometry"
 import { stampPageNumber } from "../stamp"
-import { A4, type ComposeRequest, type SheetSpec } from "../types"
+import { A4, type Box, type ComposeRequest, type SheetSpec } from "../types"
 import { flattenAnnotations } from "./annotations"
 import { LOAD_OPTIONS, embedFromSource, type Embedded } from "./embed"
+
+type SourcePick = { pageIndex: number; crop: Box | null }
+
+/** Identifies one drawn variant of a source page (whole, or a crop of it). */
+function vectorKey(content: {
+  sourceId: string
+  pageIndex: number
+  crop?: Box | null
+}): string {
+  const crop = content.crop
+    ? [
+        content.crop.x,
+        content.crop.y,
+        content.crop.width,
+        content.crop.height,
+      ].join(",")
+    : "-"
+  return `${content.sourceId}:${content.pageIndex}:${crop}`
+}
 
 function drawTab(page: PDFPage, label: string, bold: PDFFont) {
   let size = 54
@@ -62,29 +81,38 @@ export async function composeSheets(
   const font = await out.embedFont(StandardFonts.Helvetica)
   const bold = await out.embedFont(StandardFonts.HelveticaBold)
 
-  // Load each source once and embed every page it contributes in one batch.
-  const wanted = new Map<string, Set<number>>()
+  // Load each source once and embed every page variant it contributes in one
+  // batch. A page may appear whole and cropped, so the crop is part of the key.
+  const wanted = new Map<string, Map<string, SourcePick>>()
   for (const sheet of request.sheets) {
     if (sheet.content.kind !== "vector") continue
-    const set = wanted.get(sheet.content.sourceId) ?? new Set<number>()
-    set.add(sheet.content.pageIndex)
-    wanted.set(sheet.content.sourceId, set)
+    const { sourceId, pageIndex, crop } = sheet.content
+    const picks = wanted.get(sourceId) ?? new Map<string, SourcePick>()
+    picks.set(vectorKey(sheet.content), { pageIndex, crop: crop ?? null })
+    wanted.set(sourceId, picks)
   }
   const embedded = new Map<string, Embedded>()
   const rotations = new Map<string, number>()
-  for (const [sourceId, indices] of wanted) {
+  for (const [sourceId, picks] of wanted) {
     const bytes = request.sources[sourceId]
     if (!bytes) throw new Error(`Missing source file ${sourceId}`)
     const doc = await PDFDocument.load(bytes, LOAD_OPTIONS)
-    const order = [...indices].sort((a, b) => a - b)
-    const pages = order.map((i) => doc.getPage(i))
+    const entries = [...picks.entries()].sort(
+      ([, a], [, b]) => a.pageIndex - b.pageIndex
+    )
+    const pages = entries.map(([, pick]) => doc.getPage(pick.pageIndex))
     for (const page of pages) flattenAnnotations(page)
-    const results = await embedFromSource(out, pages)
-    order.forEach((i, k) => {
-      const key = `${sourceId}:${i}`
+    const results = await embedFromSource(
+      out,
+      pages,
+      entries.map(([, pick]) => pick.crop)
+    )
+    entries.forEach(([key, pick], k) => {
       const result = results[k]
       if (!result)
-        throw new Error(`Page ${i + 1} of a file could not be copied`)
+        throw new Error(
+          `Page ${pick.pageIndex + 1} of a file could not be copied`
+        )
       embedded.set(key, result)
       rotations.set(key, normalizeRotation(toDegrees(pages[k].getRotation())))
     })
@@ -97,7 +125,7 @@ export async function composeSheets(
     const content = sheet.content
 
     if (content.kind === "vector") {
-      const key = `${content.sourceId}:${content.pageIndex}`
+      const key = vectorKey(content)
       const sourcePage = embedded.get(key)!
       const place = placementOnA4(
         sourcePage.width,

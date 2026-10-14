@@ -27,6 +27,8 @@ export type PageItem = {
   forceRaster: boolean
   /** User confirmed a page flagged for review is fine as is. */
   checked?: boolean
+  /** User wants the whole page, not just the scan on it. */
+  fullPage?: boolean
 }
 
 export type DocRole = "cover" | "document"
@@ -91,6 +93,7 @@ export type PageFlag =
   | "review"
   | "rotated"
   | "autofixed"
+  | "scan"
   | "scaled"
   | "raster"
   | "edited"

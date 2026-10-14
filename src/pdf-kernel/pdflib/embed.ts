@@ -1,10 +1,19 @@
 import type { PDFDocument, PDFPage } from "pdf-lib"
 
+import type { Box } from "../types"
+
 export const LOAD_OPTIONS = { updateMetadata: false } as const
 
 export type Embedded = Awaited<ReturnType<PDFDocument["embedPage"]>>
 
-function cropBounds(page: PDFPage) {
+function cropBounds(page: PDFPage, window?: Box | null) {
+  if (window)
+    return {
+      left: window.x,
+      bottom: window.y,
+      right: window.x + window.width,
+      top: window.y + window.height,
+    }
   const crop = page.getCropBox()
   return {
     left: crop.x,
@@ -21,16 +30,18 @@ function cropBounds(page: PDFPage) {
  */
 export async function embedFromSource(
   out: PDFDocument,
-  pages: PDFPage[]
+  pages: PDFPage[],
+  windows: (Box | null | undefined)[] = []
 ): Promise<(Embedded | null)[]> {
+  const bounds = pages.map((page, i) => cropBounds(page, windows[i]))
   try {
-    return await out.embedPages(pages, pages.map(cropBounds))
+    return await out.embedPages(pages, bounds)
   } catch {
     // One bad page: embed individually so the rest still share nothing broken.
     const result: (Embedded | null)[] = []
-    for (const page of pages) {
+    for (let i = 0; i < pages.length; i++) {
       try {
-        result.push(await out.embedPage(page, cropBounds(page)))
+        result.push(await out.embedPage(pages[i], bounds[i]))
       } catch {
         result.push(null)
       }

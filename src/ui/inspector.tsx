@@ -25,6 +25,7 @@ import {
 } from "@/state/plan"
 import {
   markChecked,
+  setFullPage,
   rotatePages,
   updateBundleSettings,
   updateFixerSettings,
@@ -134,6 +135,7 @@ function PagePanel({ tool }: { tool: Tool }) {
       {page.flags.includes("review") ? (
         <ReviewCallout tool={tool} page={page} />
       ) : null}
+      {page.analysis?.scan ? <ScanRow tool={tool} page={page} /> : null}
       <PageFacts page={page} sources={sources} />
     </div>
   )
@@ -240,6 +242,26 @@ function PageFacts({
         </Fact>
       )}
     </dl>
+  )
+}
+
+/** Shown for a page whose scan covers only part of it. */
+function ScanRow({ tool, page }: { tool: Tool; page: ResolvedPage }) {
+  const scanned = page.crop !== null
+  return (
+    <Row
+      label="Fit scan to page"
+      hint={
+        scanned
+          ? "The scan is enlarged to fill the sheet"
+          : "The whole page is shown as filed"
+      }
+    >
+      <Switch
+        checked={scanned}
+        onCheckedChange={(on) => setFullPage(tool, !on)}
+      />
+    </Row>
   )
 }
 

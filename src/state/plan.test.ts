@@ -32,6 +32,7 @@ function analysisPage(
     detection: { method: "text", angle: 0, review: false, note: "" },
     autoRotate: 0,
     raster: null,
+    scan: null,
     ...overrides,
   }
 }
@@ -229,6 +230,20 @@ describe("page resolution", () => {
     const [p0, p1] = items("s", 2)
     expect(resolvePage(p0, srcs).flags).toContain("autofixed")
     expect(resolvePage(p1, srcs).flags).not.toContain("autofixed")
+  })
+
+  it("crops a partial scan to its area unless the user keeps the page", () => {
+    const scan = { x: 0, y: 144, width: 432, height: 648 }
+    const srcs = {
+      s: source("s", [analysisPage(0, { width: 612, height: 792, scan })]),
+    }
+    const [item] = items("s", 1)
+    const cropped = resolvePage(item, srcs)
+    expect(cropped.crop).toEqual(scan)
+    expect(cropped.flags).toContain("scan")
+    const whole = resolvePage({ ...item, fullPage: true }, srcs)
+    expect(whole.crop).toBeNull()
+    expect(whole.flags).not.toContain("scan")
   })
 
   it("treats a page whose analysis has not landed yet as pending", () => {

@@ -42,7 +42,13 @@ export type ProbeResult = {
 
 /** What goes on one output sheet. */
 export type SheetContent =
-  | { kind: "vector"; sourceId: string; pageIndex: number }
+  | {
+      kind: "vector"
+      sourceId: string
+      pageIndex: number
+      /** Only this part of the page is drawn (a scan), in page coordinates. */
+      crop?: Box | null
+    }
   | {
       kind: "raster"
       /** JPEG of the page exactly as a viewer displays it (after /Rotate). */

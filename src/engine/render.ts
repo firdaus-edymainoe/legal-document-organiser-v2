@@ -1,4 +1,10 @@
-import { A4, addRotation, type GrayImage, type Rotation } from "@/pdf-kernel"
+import {
+  A4,
+  addRotation,
+  type Box,
+  type GrayImage,
+  type Rotation,
+} from "@/pdf-kernel"
 
 import { annotationModeEnable, type PDFPageProxy } from "./pdfjs"
 
@@ -21,28 +27,57 @@ export function freeCanvas(canvas: HTMLCanvasElement) {
  * Render a page as a viewer shows it, turned a further `extra` degrees
  * clockwise, either at `scale` or fitted inside `fit`.
  */
+/**
+ * A viewport onto the whole page, or onto `window` (page coordinates) only,
+ * moved so the window's top-left corner is the canvas's top-left corner.
+ */
+function viewportOf(
+  page: PDFPageProxy,
+  rotation: Rotation,
+  scale: number,
+  window: Box | null
+) {
+  const full = page.getViewport({ scale, rotation })
+  if (!window) return { viewport: full, width: full.width, height: full.height }
+  const [ax, ay] = full.convertToViewportPoint(window.x, window.y)
+  const [bx, by] = full.convertToViewportPoint(
+    window.x + window.width,
+    window.y + window.height
+  )
+  return {
+    viewport: page.getViewport({
+      scale,
+      rotation,
+      offsetX: -Math.min(ax, bx),
+      offsetY: -Math.min(ay, by),
+    }),
+    width: Math.abs(bx - ax),
+    height: Math.abs(by - ay),
+  }
+}
+
 export async function renderPage(
   page: PDFPageProxy,
   options: {
     extra?: Rotation
     scale?: number
     fit?: { width: number; height: number }
+    /** Only this part of the page (page coordinates), e.g. a scan. */
+    crop?: Box | null
   }
 ): Promise<HTMLCanvasElement> {
   const rotation = addRotation(page.rotate, options.extra ?? 0)
-  const base = page.getViewport({ scale: 1, rotation })
+  const window = options.crop ?? null
   let scale = options.scale ?? 1
   if (options.fit) {
+    const base = viewportOf(page, rotation, 1, window)
     scale = Math.min(
       options.fit.width / base.width,
       options.fit.height / base.height
     )
   }
-  const viewport = page.getViewport({ scale, rotation })
-  const canvas = createCanvas(
-    Math.ceil(viewport.width),
-    Math.ceil(viewport.height)
-  )
+  const { viewport, width, height } = viewportOf(page, rotation, scale, window)
+  const canvas = createCanvas(Math.ceil(width), Math.ceil(height))
   const ctx = canvas.getContext("2d", { alpha: false })
   if (!ctx) throw new Error("Canvas is unavailable")
   ctx.fillStyle = "#ffffff"
@@ -63,6 +98,8 @@ export type SheetDrawing = {
   extra: Rotation
   color: string | null
   label?: string
+  /** Draw only this part of the page. */
+  crop?: Box | null
 }
 
 /** Draw an output sheet (A4 portrait) the way the exported PDF will look. */
@@ -81,6 +118,7 @@ export async function renderSheet(
     const pixelRatio = 1
     const content = await renderPage(drawing.page, {
       extra: drawing.extra,
+      crop: drawing.crop,
       fit: { width: width * pixelRatio, height: height * pixelRatio },
     })
     const dx = (width - content.width) / 2

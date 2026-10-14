@@ -1,4 +1,4 @@
-import type { Rotation } from "@/pdf-kernel"
+import type { Box, Rotation } from "@/pdf-kernel"
 
 import { canvasToBlob, freeCanvas, renderPage, renderSheet } from "./render"
 import { openSource } from "./sources"
@@ -10,6 +10,8 @@ export type ThumbSpec = {
   extra: Rotation
   color: string | null
   label?: string
+  /** Part of the page to draw (a scan), in page coordinates. */
+  crop?: Box | null
   width: number
   /** "sheet" = how the output looks; "original" = the page as filed. */
   view: "sheet" | "original"
@@ -23,6 +25,7 @@ export function thumbKey(s: ThumbSpec): string {
     s.extra,
     s.color ?? "-",
     s.label ?? "-",
+    s.crop ? [s.crop.x, s.crop.y, s.crop.width, s.crop.height].join(",") : "-",
     s.width,
   ].join("|")
 }
@@ -76,7 +79,13 @@ async function draw(spec: ThumbSpec): Promise<string> {
       page = await doc.getPage(spec.pageIndex + 1)
     }
     canvas = await renderSheet(
-      { page, extra: spec.extra, color: spec.color, label: spec.label },
+      {
+        page,
+        extra: spec.extra,
+        color: spec.color,
+        label: spec.label,
+        crop: spec.crop,
+      },
       spec.width
     )
     page?.cleanup()

@@ -77,6 +77,7 @@ async function buildFile(
         kind: "vector",
         sourceId: sheet.sourceId,
         pageIndex: sheet.pageIndex,
+        crop: sheet.crop,
       },
       rotate: sheet.rotate,
       color: sheet.color,
