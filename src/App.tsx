@@ -1,37 +1,46 @@
-import { useEffect, type ReactNode } from "react"
+import { useEffect } from "react"
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom"
 
-import { AppShell } from "@/features/app-shell"
-import { HomeScreen } from "@/features/home-screen"
-import { Workspace } from "@/features/workspace"
-import { useJob } from "@/features/store"
+import { Toaster } from "@/components/ui/sonner"
+import { TooltipProvider } from "@/components/ui/tooltip"
+import { hydrate, useStore } from "@/state/store"
+import { AppShell } from "@/ui/app-shell"
+import { Home } from "@/ui/home"
+import { Workspace } from "@/ui/workspace"
+import { PasswordDialog } from "@/ui/password-dialog"
+import { ExportDialog } from "@/ui/export-dialog"
 
-function Hydrate({ children }: { children: ReactNode }) {
-  const hydrate = useJob((state) => state.hydrate)
-  const ready = useJob((state) => state.ready)
+export function App() {
+  const ready = useStore((s) => s.ready)
 
   useEffect(() => {
     void hydrate()
-  }, [hydrate])
+  }, [])
 
-  if (!ready) return null
-  return children
-}
+  if (!ready) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-ink-soft">
+        Opening your workspace…
+      </div>
+    )
+  }
 
-export function App() {
   return (
-    <Hydrate>
-    <HashRouter>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route index element={<HomeScreen />} />
-          <Route path="combine" element={<Workspace mode="combine" />} />
-          <Route path="bundle" element={<Workspace mode="bundle" />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
-    </HashRouter>
-    </Hydrate>
+    <TooltipProvider delay={300}>
+      <HashRouter>
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route index element={<Home />} />
+            <Route path="bundle" element={<Workspace tool="bundle" />} />
+            <Route path="fixer" element={<Workspace tool="fixer" />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </HashRouter>
+      <PasswordDialog />
+      <ExportDialog />
+      <Toaster position="bottom-right" />
+    </TooltipProvider>
   )
 }
 

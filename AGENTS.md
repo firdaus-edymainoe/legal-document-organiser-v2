@@ -1,29 +1,37 @@
 # AGENTS.md
 
-Client-only Vite + React 19 app. There is no backend.
+Client-only Vite + React 19 app. No backend. See README for behaviour.
 
-## Features
+## Layout
 
-- **Combine** (`#/combine`) — merge PDFs onto A4, optional page numbers.
-- **Bundle of Authorities** (`#/bundle`) — cover, TAB dividers, numbering, Word index.
+- `src/pdf-kernel/` — pure logic, runs in Node tests.
+  - `rules.ts` — the binding rule (`bindingRotation`). Single source of truth for turning.
+  - `orientation/` — `text.ts` (pdf.js text items → angle, stamp filtering), `image.ts`
+    (bitmap → angle with confidence), `decide.ts` (combine, decide what needs review).
+  - `pdflib/` — pdf-lib work for the worker: `probe.ts` (can it be copied as vectors?),
+    `compose.ts` (build A4 sheets), `annotations.ts` (flatten printable annotations),
+    `embed.ts` (batch `embedPages` per source — never `embedPage` in a loop, it duplicates
+    shared resources).
+  - `worker/` — one pdf-lib worker, one job at a time.
+- `src/engine/` — browser-only pdf.js: open (with password), render, analyse, rasterise,
+  thumbnails. pdf.js needs `wasmUrl`/fonts/cmaps (served from `/pdfjs/` by the Vite plugin
+  in `vite.config.ts`) or CCITT/JBIG2 scans render blank. Destroy documents via
+  `doc.loadingTask.destroy()` (v6 removed `PDFDocumentProxy.destroy`).
+- `src/state/` — zustand store (`store.ts`), pure output planning (`plan.ts`), export,
+  IndexedDB persistence.
+- `src/ui/` — screens and components.
 
-## Architecture
+## Rules
 
-- `src/pdf-kernel/` — unlock, analyze, plan, normalize (embed onto fresh A4), stamp, compose. No React. Vitest in Node.
-- `src/pdf-kernel/worker/` — one-job-at-a-time module worker. Main thread keeps bytes in IndexedDB.
-- `src/persist/` — IndexedDB. Failed opens are retried, not cached. Reset awaits `clear()`.
-- `src/features/` — Home / Combine / Bundle UI.
-
-After ingest, every page is a new A4 portrait sheet (`MediaBox = CropBox = A4`, `/Rotate = 0`). Features must not set CropBox or `/Rotate` themselves.
-
-Landscape policy: Combine letterboxes; Bundle rotates CCW so the sheet is portrait (court convention).
+- Output sheets are always portrait A4, `/Rotate 0`. Rotation is applied when drawing.
+- Analysis renders source and copy at the same scale before comparing.
+- Orientation detector resolution is 1200 px long side; lower resolutions mis-read real scans.
 
 ## Commands
 
 ```bash
 npm run dev
 npm test
-npm run typecheck
+npm run lint
 npm run build
-node scripts/generate-test-pdfs.mjs
 ```

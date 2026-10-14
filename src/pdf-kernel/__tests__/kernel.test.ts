@@ -1,14 +1,19 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib"
+import { PDFDocument } from "pdf-lib"
 import { describe, expect, it } from "vitest"
 
-import { A4, STAMP_MARGIN_PT } from "../types"
-import { analyzePdf } from "../analyze"
-import { planDocument } from "../plan"
-import { normalizeDocument } from "../normalize"
-import { stampPageNumber } from "../stamp"
-import { ingestPdf } from "../ingest"
-import { buildComposePlan, composePdf } from "../compose"
+import { addRotation, displayedSize, placementOnA4 } from "../geometry"
+import { decideOrientation } from "../orientation/decide"
+import { detectImageOrientation, rotateGray } from "../orientation/image"
+import { textOrientation } from "../orientation/text"
+import { composeSheets } from "../pdflib/compose"
+import { probeSource } from "../pdflib/probe"
+import { bindingRotation, isLandscape } from "../rules"
+import { A4, type Rotation, type SheetSpec } from "../types"
+import { compareRenders, vectorCopyFailed } from "../verify"
+import { crc32, zip } from "../zip"
 import {
+  annotatedPdf,
+  bodyTextPdf,
   encryptedPdf,
   landscapeUprightPdf,
   letterMediaA4CropPdf,
@@ -19,208 +24,360 @@ import {
   rotate270LandscapePdf,
   rotate90PortraitPdf,
 } from "./fixtures"
-import { pageBands, assertUprightAgainstSource } from "./orientation"
+import {
+  closePdf,
+  openPdf,
+  pageStrings,
+  pageText,
+  renderGray,
+  renderRgbAt,
+} from "./node-pdfjs"
 
-async function assertCanonical(bytes: Uint8Array) {
-  const doc = await PDFDocument.load(bytes)
-  for (const page of doc.getPages()) {
-    const crop = page.getCropBox()
-    const media = page.getMediaBox()
-    expect(page.getRotation().angle).toBe(0)
-    expect(crop.x).toBeCloseTo(0, 5)
-    expect(crop.y).toBeCloseTo(0, 5)
-    expect(crop.width).toBeCloseTo(A4.widthPt, 2)
-    expect(crop.height).toBeCloseTo(A4.heightPt, 2)
-    expect(media.width).toBeCloseTo(A4.widthPt, 2)
-    expect(media.height).toBeCloseTo(A4.heightPt, 2)
-  }
-}
+const ANGLES: Rotation[] = [0, 90, 180, 270]
 
-describe("kernel fixtures", () => {
-  it("keeps portrait A4 rotate 0 as identity plan and stamps top-right", async () => {
-    const bytes = await portraitA4Pdf()
-    const analysis = await analyzePdf(bytes)
-    const plans = planDocument(analysis.pages, "letterbox")
-    expect(plans[0]?.rotate).toBe(0)
-    expect(plans[0]?.autoFixed).toBe(false)
-
-    const canonical = await normalizeDocument(bytes, plans)
-    await assertCanonical(canonical)
-
-    const doc = await PDFDocument.load(canonical)
-    const page = doc.getPages()[0]
-    const font = await doc.embedFont(StandardFonts.Helvetica)
-    const rect = stampPageNumber(page, 12, font)
-    expect(rect.x + rect.width).toBeLessThanOrEqual(A4.widthPt)
-    expect(rect.y + rect.height).toBeLessThanOrEqual(A4.heightPt)
-    expect(rect.x).toBeGreaterThan(A4.widthPt - STAMP_MARGIN_PT - 40)
-    expect(rect.y).toBeGreaterThan(A4.heightPt - STAMP_MARGIN_PT - 40)
-    expect(rect.x).toBeGreaterThanOrEqual(0)
-    expect(rect.y).toBeGreaterThanOrEqual(0)
+describe("binding rule", () => {
+  it("always yields a portrait sheet with upright or spine-up content", () => {
+    for (const [w, h] of [
+      [595, 842],
+      [842, 595],
+      [612, 792],
+      [1000, 400],
+    ]) {
+      for (const visible of ANGLES) {
+        const extra = bindingRotation(w, h, visible)
+        const sheet = displayedSize(w, h, extra)
+        expect(sheet.height, `${w}x${h}@${visible}`).toBeGreaterThanOrEqual(
+          sheet.width
+        )
+        const final = addRotation(visible, extra)
+        // Content's own shape once upright:
+        const upright = displayedSize(w, h, addRotation(0, 360 - visible))
+        const expected = isLandscape(upright.width, upright.height) ? 270 : 0
+        expect(final, `${w}x${h}@${visible}`).toBe(expected)
+      }
+    }
   })
 
-  it("uses CropBox, not MediaBox, when they differ", async () => {
-    const bytes = await letterMediaA4CropPdf()
-    const analysis = await analyzePdf(bytes)
-    const page = analysis.pages[0]
-    expect(page).toBeDefined()
-    expect(page.cropBox.width).toBeCloseTo(A4.widthPt, 2)
-    expect(page.cropBox.height).toBeCloseTo(A4.heightPt, 2)
-    expect(page.mediaBox.width).toBeGreaterThan(page.cropBox.width + 10)
-    expect(page.issues.includes("not-a4")).toBe(false)
-
-    const canonical = await normalizeDocument(
-      bytes,
-      planDocument(analysis.pages, "letterbox"),
-    )
-    await assertCanonical(canonical)
-  })
-
-  it("flattens /Rotate 180 onto rotate 0", async () => {
-    const bytes = await rotate180Pdf()
-    const analysis = await analyzePdf(bytes)
-    expect(analysis.pages[0]?.sourceRotation).toBe(180)
-    const canonical = await normalizeDocument(
-      bytes,
-      planDocument(analysis.pages, "letterbox"),
-    )
-    await assertCanonical(canonical)
-  })
-
-  it("bakes /Rotate 270 to match the viewer, not 180° off", async () => {
-    const bytes = await rotate270LandscapePdf()
-    const source = await pageBands(bytes)
-    expect(source.top).toMatch(/HEADER-270/)
-    expect(source.bottom).toMatch(/FOOTER-270/)
-
-    const analysis = await analyzePdf(bytes)
-    expect(analysis.pages[0]?.sourceRotation).toBe(270)
-    const [planned] = planDocument(analysis.pages, "letterbox")
-    expect(planned).toBeDefined()
-    const canonical = await normalizeDocument(bytes, [{ ...planned!, rotate: 0 }])
-    await assertCanonical(canonical)
-
-    const baked = await pageBands(canonical)
-    expect(baked.top).toMatch(/HEADER-270/)
-    expect(baked.bottom).toMatch(/FOOTER-270/)
-    expect(baked.top).not.toMatch(/FOOTER-270/)
-  })
-
-  it("keeps /Rotate 90 portrait text upright, not 180° off", async () => {
-    const bytes = await rotate90PortraitPdf()
-    const source = await pageBands(bytes)
-    expect(source.top).toMatch(/HEADER-90/)
-
-    const ingested = await ingestPdf(bytes, { landscapePolicy: "letterbox" })
-    expect(ingested.analysis.pages[0]?.sourceRotation).toBe(90)
-    await assertCanonical(ingested.canonical)
-
-    const baked = await pageBands(ingested.canonical)
-    expect(baked.top).toMatch(/HEADER-90/)
-    expect(baked.top).not.toMatch(/FOOTER-90/)
-  })
-
-  it("letterboxes landscape upright text into portrait A4", async () => {
-    const bytes = await landscapeUprightPdf()
-    const ingested = await ingestPdf(bytes, { landscapePolicy: "letterbox" })
-    expect(ingested.plans[0]?.rotate).toBe(0)
-    await assertCanonical(ingested.canonical)
-  })
-
-  it("rotates landscape CCW onto portrait A4 without a leftover 270 on portrait", async () => {
-    const bytes = await landscapeUprightPdf()
-    const ingested = await ingestPdf(bytes, { landscapePolicy: "rotate-ccw" })
-    expect(ingested.plans[0]?.rotate).toBe(270)
-    await assertCanonical(ingested.canonical)
-
-    const portrait = await ingestPdf(await portraitA4Pdf(), {
-      landscapePolicy: "rotate-ccw",
-    })
-    expect(portrait.plans[0]?.rotate).toBe(0)
-  })
-
-  it("unlocks an encrypted PDF without rasterising", async () => {
-    const bytes = await encryptedPdf()
-    const ingested = await ingestPdf(bytes, { landscapePolicy: "letterbox" })
-    expect(ingested.imageOnly).toBe(false)
-    expect(ingested.bypassApplied).toBe(true)
-    expect(ingested.reasons).toContain("encryption")
-    await assertCanonical(ingested.canonical)
-  })
-
-  it("normalises a CropBox whose origin is not zero", async () => {
-    const bytes = await originShiftedCropPdf()
-    const ingested = await ingestPdf(bytes, { landscapePolicy: "letterbox" })
-    await assertCanonical(ingested.canonical)
-  })
-
-  it("scales letter paper onto A4", async () => {
-    const bytes = await letterPortraitPdf()
-    const ingested = await ingestPdf(bytes, { landscapePolicy: "letterbox" })
-    expect(ingested.analysis.pages[0]?.issues).toContain("not-a4")
-    expect(ingested.plans[0]?.autoFixed).toBe(true)
-    await assertCanonical(ingested.canonical)
-  })
-
-  it("composes numbered pages from canonical bytes without dropping files", async () => {
-    const first = await ingestPdf(await portraitA4Pdf(), { landscapePolicy: "letterbox" })
-    const second = await ingestPdf(await letterPortraitPdf(), { landscapePolicy: "letterbox" })
-    const bytes = await composePdf({
-      cover: null,
-      documents: [
-        { id: "a", fileName: "1. Contract.pdf", bytes: first.canonical, pageCount: first.analysis.pageCount },
-        { id: "b", fileName: "2. Affidavit.pdf", bytes: second.canonical, pageCount: second.analysis.pageCount },
-      ],
-      settings: {
-        tabDividers: true,
-        pageNumbers: true,
-        startNumber: 1,
-        numberCover: false,
-      },
-    })
-    const doc = await PDFDocument.load(bytes)
-    expect(doc.getPageCount()).toBe(4)
-    await assertCanonical(bytes)
-  })
-
-  it("builds TOC from the same slot list as compose", () => {
-    const plan = buildComposePlan({
-      cover: { id: "c", fileName: "cover.pdf", bytes: new Uint8Array(), pageCount: 2 },
-      documents: [
-        { id: "a", fileName: "1. Contract.pdf", bytes: new Uint8Array(), pageCount: 2 },
-        { id: "b", fileName: "2. Affidavit.pdf", bytes: new Uint8Array(), pageCount: 1 },
-      ],
-      settings: {
-        tabDividers: true,
-        pageNumbers: true,
-        startNumber: 1,
-        numberCover: false,
-      },
-    })
-    expect(plan.toc).toEqual([
-      { tabNumber: 1, startPage: 2, fileName: "1. Contract.pdf" },
-      { tabNumber: 2, startPage: 5, fileName: "2. Affidavit.pdf" },
-    ])
-    expect(plan.numberedPageCount).toBe(5)
+  it("leaves an upright portrait page alone and turns landscape anticlockwise", () => {
+    expect(bindingRotation(595, 842, 0)).toBe(0)
+    expect(bindingRotation(842, 595, 0)).toBe(270)
+    // Already filed spine-up: nothing to do.
+    expect(bindingRotation(595, 842, 270)).toBe(0)
+    // Landscape content turned the wrong way on a portrait sheet: flip it.
+    expect(bindingRotation(595, 842, 90)).toBe(180)
+    expect(bindingRotation(595, 842, 180)).toBe(180)
   })
 })
 
-describe("stamp knockout", () => {
-  it("draws a white pad that stays inside the A4 crop", async () => {
-    const doc = await PDFDocument.create()
-    const page = doc.addPage([A4.widthPt, A4.heightPt])
-    page.drawRectangle({
-      x: 0,
-      y: 0,
-      width: A4.widthPt,
-      height: A4.heightPt,
-      color: rgb(0.1, 0.1, 0.1),
+describe("placement", () => {
+  it("fits and centres every rotation inside A4", () => {
+    for (const rotate of ANGLES) {
+      const p = placementOnA4(612, 792, rotate)
+      const bound = displayedSize(p.width, p.height, rotate)
+      expect(bound.width).toBeLessThanOrEqual(A4.widthPt + 0.01)
+      expect(bound.height).toBeLessThanOrEqual(A4.heightPt + 0.01)
+    }
+  })
+})
+
+describe("text orientation", () => {
+  it("ignores e-filing stamps and page numbers", () => {
+    const upright = [1, 0, 0, 1, 0, 0]
+    const sideways = [0, 1, -1, 0, 0, 0] // 90° anticlockwise in content space
+    const result = textOrientation(
+      [
+        { str: "S/N 3KA4pPVhQUS4dOWDILEU9Q", transform: upright },
+        {
+          str: "**Note : Serial number will be used to verify the originality",
+          transform: upright,
+        },
+        { str: "40", transform: upright },
+        { str: "Lot 12 Lot 13 Lot 14 Lot 15", transform: sideways },
+      ],
+      0
+    )
+    expect(result.angle).toBe(270)
+    expect(result.chars).toBe(20)
+  })
+
+  it("accounts for /Rotate", () => {
+    const r = textOrientation(
+      [{ str: "Hello world", transform: [1, 0, 0, 1, 0, 0] }],
+      90
+    )
+    expect(r.angle).toBe(90)
+  })
+})
+
+describe("decision", () => {
+  const strongText = { angle: 0 as Rotation, chars: 900, share: 1 }
+  const noText = { angle: null, chars: 0, share: 0 }
+  const img = (angle: Rotation, flip = 0.9, axis = 0.8) => ({
+    angle,
+    flipConfidence: flip,
+    axisConfidence: axis,
+    glyphs: 500,
+    votes: 100,
+  })
+
+  it("trusts a full text layer", () => {
+    expect(decideOrientation(strongText, img(180))).toMatchObject({
+      method: "text",
+      angle: 0,
     })
-    const font = await doc.embedFont(StandardFonts.Helvetica)
-    const rect = stampPageNumber(page, 1, font)
-    expect(rect.x).toBeGreaterThanOrEqual(0)
-    expect(rect.y).toBeGreaterThanOrEqual(0)
-    expect(rect.x + rect.width).toBeLessThanOrEqual(A4.widthPt)
-    expect(rect.y + rect.height).toBeLessThanOrEqual(A4.heightPt)
+  })
+  it("uses the image when there is no text", () => {
+    expect(decideOrientation(noText, img(90))).toMatchObject({
+      method: "image",
+      angle: 90,
+      review: false,
+    })
+  })
+  it("keeps the page and asks for review when unsure", () => {
+    expect(decideOrientation(noText, img(180, 0.3))).toMatchObject({
+      angle: null,
+      review: true,
+    })
+    expect(decideOrientation(noText, img(0, 0.3))).toMatchObject({
+      angle: null,
+      review: false,
+    })
+  })
+})
+
+async function outputAngle(bytes: Uint8Array) {
+  const doc = await openPdf(bytes)
+  try {
+    return (await pageText(doc, 1)).angle
+  } finally {
+    await closePdf(doc)
+  }
+}
+
+async function normalise(bytes: Uint8Array, extra?: Rotation) {
+  const probe = await probeSource(bytes)
+  const doc = await openPdf(bytes)
+  const text = await pageText(doc, 1)
+  await closePdf(doc)
+  const page = probe.pages[0]
+  const rotate =
+    extra ??
+    bindingRotation(page.displayedWidth, page.displayedHeight, text.angle)
+  const sheets: SheetSpec[] = [
+    {
+      content: { kind: "vector", sourceId: "s", pageIndex: 0 },
+      rotate,
+      color: null,
+      number: null,
+    },
+  ]
+  const out = await composeSheets({
+    sources: { s: bytes },
+    sheets,
+    numberSize: "medium",
+  })
+  return { out, probe, text, rotate }
+}
+
+async function assertA4(bytes: Uint8Array) {
+  const doc = await PDFDocument.load(bytes)
+  for (const page of doc.getPages()) {
+    expect(page.getRotation().angle).toBe(0)
+    const media = page.getMediaBox()
+    expect(media.width).toBeCloseTo(A4.widthPt, 1)
+    expect(media.height).toBeCloseTo(A4.heightPt, 1)
+  }
+}
+
+describe("compose (vector)", () => {
+  const cases: [string, () => Promise<Uint8Array>, Rotation][] = [
+    ["A4 portrait", portraitA4Pdf, 0],
+    ["US Letter", letterPortraitPdf, 0],
+    ["CropBox inside a large MediaBox", letterMediaA4CropPdf, 0],
+    ["CropBox with shifted origin", originShiftedCropPdf, 0],
+    ["/Rotate 180", rotate180Pdf, 0],
+    ["/Rotate 90 on portrait", rotate90PortraitPdf, 0],
+    ["/Rotate 270 on landscape (already spine-up)", rotate270LandscapePdf, 270],
+    ["landscape page, upright text", landscapeUprightPdf, 270],
+    [
+      "portrait page, text drawn sideways (90° ccw)",
+      () => bodyTextPdf({ textRotate: 90 }),
+      270,
+    ],
+    [
+      "portrait page, text drawn sideways (90° cw)",
+      () => bodyTextPdf({ textRotate: 270 }),
+      270,
+    ],
+    [
+      "portrait page, text drawn upside down",
+      () => bodyTextPdf({ textRotate: 180 }),
+      0,
+    ],
+    [
+      "landscape page, /Rotate 90, upright body",
+      () => bodyTextPdf({ landscape: true, pageRotate: 90 }),
+      270,
+    ],
+  ]
+
+  for (const [label, make, expected] of cases) {
+    it(`${label} → A4, text at ${expected}°`, async () => {
+      const { out } = await normalise(await make())
+      await assertA4(out)
+      expect(await outputAngle(out)).toBe(expected)
+    })
+  }
+
+  it("keeps the content inside the sheet (no clipping of the header)", async () => {
+    const { out } = await normalise(await rotate270LandscapePdf())
+    const doc = await openPdf(out)
+    const strings = await pageStrings(doc, 1)
+    await closePdf(doc)
+    for (const s of strings) {
+      expect(s.x).toBeGreaterThanOrEqual(0)
+      expect(s.x).toBeLessThanOrEqual(s.width)
+      expect(s.y).toBeGreaterThanOrEqual(0)
+      expect(s.y).toBeLessThanOrEqual(s.height)
+    }
+  })
+
+  it("flattens printable annotations and skips hidden ones", async () => {
+    const bytes = await annotatedPdf()
+    const { out } = await normalise(bytes, 0)
+    const doc = await openPdf(out)
+    // Visible stamp: Rect 400..500 x 600..700 on an A4 page.
+    const inside = await renderRgbAt(
+      doc,
+      1,
+      450 / A4.widthPt,
+      1 - 650 / A4.heightPt
+    )
+    const hiddenSpot = await renderRgbAt(
+      doc,
+      1,
+      150 / A4.widthPt,
+      1 - 150 / A4.heightPt
+    )
+    await closePdf(doc)
+    expect(inside[0]).toBeGreaterThan(200)
+    expect(inside[1]).toBeLessThan(60)
+    expect(hiddenSpot).toEqual([255, 255, 255])
+  })
+
+  it("tints with multiply and stamps numbers", async () => {
+    const bytes = await portraitA4Pdf()
+    const out = await composeSheets({
+      sources: { s: bytes },
+      sheets: [
+        {
+          content: { kind: "vector", sourceId: "s", pageIndex: 0 },
+          rotate: 0,
+          color: "#ffe08a",
+          number: 7,
+        },
+        {
+          content: { kind: "tab", label: "TAB-1" },
+          rotate: 0,
+          color: null,
+          number: 8,
+        },
+        { content: { kind: "blank" }, rotate: 0, color: null, number: null },
+      ],
+      numberSize: "large",
+    })
+    await assertA4(out)
+    const doc = await openPdf(out)
+    const bg = await renderRgbAt(doc, 1, 0.5, 0.6)
+    expect(bg[0]).toBeGreaterThan(240)
+    expect(bg[2]).toBeLessThan(160)
+    const first = await pageStrings(doc, 1)
+    const seven = first.find((s) => s.str === "7")
+    expect(seven).toBeDefined()
+    expect(seven!.x).toBeGreaterThan(seven!.width * 0.8)
+    expect(seven!.y).toBeLessThan(seven!.height * 0.12)
+    const tab = await pageStrings(doc, 2)
+    expect(tab.map((s) => s.str)).toContain("TAB-1")
+    expect(tab.map((s) => s.str)).toContain("8")
+    expect(await pageStrings(doc, 3)).toEqual([])
+    await closePdf(doc)
+  })
+})
+
+describe("probe", () => {
+  it("flags encrypted files for rasterising", async () => {
+    const result = await probeSource(await encryptedPdf())
+    expect(result.encrypted).toBe(true)
+    expect(result.vectorOk).toBe(false)
+    expect(result.pageCount).toBe(1)
+  })
+
+  it("rejects garbage without throwing", async () => {
+    const result = await probeSource(new TextEncoder().encode("not a pdf"))
+    expect(result.vectorOk).toBe(false)
+    expect(result.error).toBeTruthy()
+  })
+
+  it("produces a faithful probe copy", async () => {
+    const bytes = await rotate270LandscapePdf()
+    const result = await probeSource(bytes)
+    expect(result.vectorOk).toBe(true)
+    expect(result.pageErrors).toEqual([])
+    const a = await openPdf(bytes)
+    const b = await openPdf(result.probe!)
+    // Compare inside an A4 frame: the original is A4 already, so sizes match.
+    const ra = await renderGray(a, 1, 300)
+    const rb = await renderGray(b, 1, 300)
+    await closePdf(a)
+    await closePdf(b)
+    expect(vectorCopyFailed(compareRenders(ra, rb))).toBe(false)
+  })
+})
+
+describe("image orientation", () => {
+  it("finds the direction of a scanned-looking page in all four turns", async () => {
+    const doc = await openPdf(await bodyTextPdf())
+    const gray = await renderGray(doc, 1, 1200)
+    await closePdf(doc)
+    for (const turn of ANGLES) {
+      const result = detectImageOrientation(rotateGray(gray, turn))
+      expect(result.angle, `turned ${turn}`).toBe(turn)
+      expect(result.flipConfidence).toBeGreaterThan(0.5)
+    }
+  })
+
+  it("returns nothing for a blank page", () => {
+    const blank = {
+      width: 400,
+      height: 560,
+      data: new Uint8Array(400 * 560).fill(255),
+    }
+    expect(detectImageOrientation(blank).angle).toBeNull()
+  })
+})
+
+describe("verify", () => {
+  it("catches a blank vector copy", () => {
+    const ink = new Uint8Array(100).fill(255)
+    ink.fill(0, 0, 20)
+    const blank = new Uint8Array(100).fill(255)
+    const c = compareRenders(
+      { width: 10, height: 10, data: ink },
+      { width: 10, height: 10, data: blank }
+    )
+    expect(vectorCopyFailed(c)).toBe(true)
+  })
+})
+
+describe("zip", () => {
+  it("computes standard CRC-32", () => {
+    expect(crc32(new TextEncoder().encode("123456789"))).toBe(0xcbf43926)
+  })
+  it("writes a readable archive header", () => {
+    const out = zip([{ name: "a.pdf", data: new Uint8Array([1, 2, 3]) }])
+    expect(Array.from(out.subarray(0, 4))).toEqual([0x50, 0x4b, 0x03, 0x04])
+    expect(Array.from(out.subarray(out.length - 22, out.length - 18))).toEqual([
+      0x50, 0x4b, 0x05, 0x06,
+    ])
   })
 })

@@ -1,112 +1,103 @@
-import { cloneBytes } from "../geometry"
-import type { ComposeInput, IngestResult, LandscapePolicy, PagePlan } from "../index"
-import type { WorkerJob, WorkerRequest, WorkerResponse } from "./protocol"
-
-function transferable(bytes: Uint8Array): { bytes: Uint8Array; buffer: ArrayBuffer } {
-  const copy = cloneBytes(bytes)
-  return { bytes: copy, buffer: copy.buffer as ArrayBuffer }
-}
+import { newId } from "@/state/ids"
+import type { ComposeRequest, ProbeResult } from "../types"
+import type { WorkerJob, WorkerReply, WorkerRequest } from "./protocol"
 
 type Pending = {
-  resolve: (value: WorkerResponse) => void
-  reject: (reason: unknown) => void
+  resolve: (reply: WorkerReply) => void
+  reject: (err: Error) => void
+  onProgress?: (done: number, total: number) => void
 }
 
-export class PdfWorkerClient {
+/**
+ * One pdf-lib worker, one job at a time (pdf-lib work is memory hungry).
+ * If the worker dies (out of memory on a huge file), every pending job is
+ * rejected and the next job starts a fresh worker.
+ */
+class PdfWorkerClient {
   private worker: Worker | null = null
-  private queue: Promise<void> = Promise.resolve()
   private pending = new Map<string, Pending>()
+  private queue: Promise<unknown> = Promise.resolve()
 
-  private ensureWorker(): Worker {
-    if (!this.worker) {
-      this.worker = new Worker(new URL("./pdf.worker.ts", import.meta.url), {
-        type: "module",
-      })
-      this.worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
-        const pending = this.pending.get(event.data.requestId)
-        if (!pending) return
-        this.pending.delete(event.data.requestId)
-        pending.resolve(event.data)
+  private ensure(): Worker {
+    if (this.worker) return this.worker
+    const worker = new Worker(new URL("./pdf.worker.ts", import.meta.url), {
+      type: "module",
+    })
+    worker.onmessage = (event: MessageEvent<WorkerReply>) => {
+      const message = event.data
+      const entry = this.pending.get(message.requestId)
+      if (!entry) return
+      if (message.kind === "progress") {
+        entry.onProgress?.(message.done, message.total)
+        return
       }
-      this.worker.onerror = (event) => {
-        const first = this.pending.values().next().value
-        if (first) first.reject(event.error ?? event.message)
-      }
+      this.pending.delete(message.requestId)
+      entry.resolve(message)
     }
-    return this.worker
+    const fail = (reason: string) => {
+      const error = new Error(reason)
+      for (const entry of this.pending.values()) entry.reject(error)
+      this.pending.clear()
+      worker.terminate()
+      if (this.worker === worker) this.worker = null
+    }
+    worker.onerror = (event) => {
+      event.preventDefault()
+      fail(
+        event.message ||
+          "The PDF worker stopped unexpectedly (the file may be too large)"
+      )
+    }
+    worker.onmessageerror = () =>
+      fail("The PDF worker sent an unreadable reply")
+    this.worker = worker
+    return worker
   }
 
-  private enqueue<T>(
+  private run(
     job: WorkerJob,
-    transfer: ArrayBuffer[],
-    pick: (response: WorkerResponse) => T,
-  ): Promise<T> {
-    const requestId = crypto.randomUUID()
-    const run = async () => {
-      const worker = this.ensureWorker()
-      const response = await new Promise<WorkerResponse>((resolve, reject) => {
-        this.pending.set(requestId, { resolve, reject })
+    transfer: Transferable[],
+    onProgress?: (done: number, total: number) => void
+  ): Promise<WorkerReply> {
+    const task = () =>
+      new Promise<WorkerReply>((resolve, reject) => {
+        const requestId = newId()
+        this.pending.set(requestId, { resolve, reject, onProgress })
         const request: WorkerRequest = { requestId, job }
-        worker.postMessage(request, transfer)
+        this.ensure().postMessage(request, transfer)
       })
-      return pick(response)
-    }
-    const result = this.queue.then(run, run)
-    this.queue = result.then(
-      () => undefined,
-      () => undefined,
-    )
+    const result = this.queue.then(task, task)
+    this.queue = result.catch(() => undefined)
     return result
   }
 
-  ingest(bytes: Uint8Array, landscapePolicy: LandscapePolicy): Promise<IngestResult> {
-    const packed = transferable(bytes)
-    return this.enqueue(
-      { type: "ingest", bytes: packed.bytes, landscapePolicy },
-      [packed.buffer],
-      (response) => {
-        if (!response.ok) throw new Error(response.error)
-        if (response.payload.type !== "ingest") throw new Error("Unexpected worker reply")
-        return response.payload.result
-      },
-    )
+  async probe(bytes: Uint8Array): Promise<ProbeResult> {
+    const copy = bytes.slice()
+    const reply = await this.run({ type: "probe", bytes: copy }, [copy.buffer])
+    if (reply.kind === "error") throw new Error(reply.error)
+    if (reply.kind !== "probe") throw new Error("Unexpected worker reply")
+    return reply.result
   }
 
-  normalize(bytes: Uint8Array, plans: PagePlan[]): Promise<Uint8Array> {
-    const packed = transferable(bytes)
-    return this.enqueue(
-      { type: "normalize", bytes: packed.bytes, plans },
-      [packed.buffer],
-      (response) => {
-        if (!response.ok) throw new Error(response.error)
-        if (response.payload.type !== "normalize") throw new Error("Unexpected worker reply")
-        return response.payload.bytes
-      },
-    )
-  }
-
-  compose(input: ComposeInput): Promise<Uint8Array> {
-    const coverPacked = input.cover ? transferable(input.cover.bytes) : null
-    const docPacked = input.documents.map((doc) => transferable(doc.bytes))
-    const cloned: ComposeInput = {
-      ...input,
-      cover: input.cover && coverPacked
-        ? { ...input.cover, bytes: coverPacked.bytes }
-        : null,
-      documents: input.documents.map((doc, index) => ({
-        ...doc,
-        bytes: docPacked[index]?.bytes ?? cloneBytes(doc.bytes),
-      })),
+  async compose(
+    request: ComposeRequest,
+    onProgress?: (done: number, total: number) => void
+  ): Promise<Uint8Array> {
+    // Sources are copied (structured clone) so the caller keeps its bytes;
+    // raster images are throwaway, so transfer them.
+    const transfer: Transferable[] = []
+    for (const sheet of request.sheets) {
+      if (sheet.content.kind === "raster")
+        transfer.push(sheet.content.image.buffer)
     }
-    const transfer = [
-      ...(coverPacked ? [coverPacked.buffer] : []),
-      ...docPacked.map((row) => row.buffer),
-    ]
-    return this.enqueue({ type: "compose", input: cloned }, transfer, (response) => {
-      if (!response.ok) throw new Error(response.error)
-      if (response.payload.type !== "compose") throw new Error("Unexpected worker reply")
-      return response.payload.bytes
-    })
+    const reply = await this.run(
+      { type: "compose", request },
+      transfer,
+      onProgress
+    )
+    if (reply.kind === "error") throw new Error(reply.error)
+    if (reply.kind !== "compose") throw new Error("Unexpected worker reply")
+    return reply.bytes
   }
 }
 

@@ -23,3 +23,6 @@ public/e2e
 *.njsproj
 *.sln
 *.sw?
+
+# local sample files for manual testing
+public/_local/

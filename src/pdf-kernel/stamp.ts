@@ -1,42 +1,44 @@
-import { StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib"
+import { rgb, type PDFFont, type PDFPage } from "pdf-lib"
 
-import { A4, STAMP_MARGIN_PT, STAMP_SIZE_PT } from "./types"
+import { A4, type NumberSize } from "./types"
 
+export const NUMBER_SIZES: Record<NumberSize, number> = {
+  small: 11,
+  medium: 16,
+  large: 26,
+}
+
+/** Distance from the top and right edges to the number's box. */
+export const STAMP_MARGIN_PT = 22
+
+/**
+ * Stamp a page number in the top-right corner of a portrait A4 sheet, on a
+ * white tab so it stays legible over scans.
+ */
 export function stampPageNumber(
   page: PDFPage,
   n: number,
   font: PDFFont,
-  options?: { widthPt?: number; heightPt?: number },
+  size: NumberSize = "medium"
 ): { x: number; y: number; width: number; height: number } {
-  const widthPt = options?.widthPt ?? A4.widthPt
-  const heightPt = options?.heightPt ?? A4.heightPt
+  const fontSize = NUMBER_SIZES[size]
   const label = String(n)
-  const size = STAMP_SIZE_PT
-  const textWidth = font.widthOfTextAtSize(label, size)
-  const padX = 4
-  const padY = 4
-  const boxWidth = textWidth + padX * 2
-  const boxHeight = size + padY * 2
-  const boxX = widthPt - STAMP_MARGIN_PT - boxWidth
-  const boxY = heightPt - STAMP_MARGIN_PT - boxHeight
+  const textWidth = font.widthOfTextAtSize(label, fontSize)
+  const capHeight = font.heightAtSize(fontSize, { descender: false })
+  const padX = fontSize * 0.35
+  const padY = fontSize * 0.25
+  const width = textWidth + padX * 2
+  const height = capHeight + padY * 2
+  const x = A4.widthPt - STAMP_MARGIN_PT - width
+  const y = A4.heightPt - STAMP_MARGIN_PT - height
 
-  page.drawRectangle({
-    x: boxX,
-    y: boxY,
-    width: boxWidth,
-    height: boxHeight,
-    color: rgb(1, 1, 1),
-    opacity: 0.92,
-  })
+  page.drawRectangle({ x, y, width, height, color: rgb(1, 1, 1), opacity: 0.9 })
   page.drawText(label, {
-    x: boxX + padX,
-    y: boxY + padY,
-    size,
+    x: x + padX,
+    y: y + padY,
+    size: fontSize,
     font,
     color: rgb(0, 0, 0),
   })
-
-  return { x: boxX, y: boxY, width: boxWidth, height: boxHeight }
+  return { x, y, width, height }
 }
-
-export { StandardFonts }

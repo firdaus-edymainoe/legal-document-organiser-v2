@@ -20,15 +20,30 @@ export function parseFilename(fileName: string): SortKey {
 
   const numMatch = base.match(/^(\d+)\s*[-._) ]/)
   if (numMatch) {
-    return { group: "", num: parseInt(numMatch[1], 10), parsed: true, raw: fileName }
+    return {
+      group: "",
+      num: parseInt(numMatch[1], 10),
+      parsed: true,
+      raw: fileName,
+    }
   }
 
   const bareNum = base.match(/^(\d+)/)
   if (bareNum) {
-    return { group: "", num: parseInt(bareNum[1], 10), parsed: true, raw: fileName }
+    return {
+      group: "",
+      num: parseInt(bareNum[1], 10),
+      parsed: true,
+      raw: fileName,
+    }
   }
 
-  return { group: "", num: Number.MAX_SAFE_INTEGER, parsed: false, raw: fileName }
+  return {
+    group: "",
+    num: Number.MAX_SAFE_INTEGER,
+    parsed: false,
+    raw: fileName,
+  }
 }
 
 function stripExtension(name: string): string {
@@ -43,8 +58,10 @@ export function compareSortKeys(a: SortKey, b: SortKey): number {
   return a.raw.localeCompare(b.raw, undefined, { numeric: true })
 }
 
-export function sortByFilename<T extends { fileName: string }>(items: T[]): T[] {
+export function sortByFilename<T extends { fileName: string }>(
+  items: T[]
+): T[] {
   return [...items].sort((a, b) =>
-    compareSortKeys(parseFilename(a.fileName), parseFilename(b.fileName)),
+    compareSortKeys(parseFilename(a.fileName), parseFilename(b.fileName))
   )
 }

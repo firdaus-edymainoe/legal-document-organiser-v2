@@ -1,45 +1,42 @@
-export { A4, STAMP_MARGIN_PT, STAMP_SIZE_PT } from "./types"
-export type {
-  AnalyzeResult,
-  Box,
-  CanonicalDocument,
-  ComposeDocument,
-  ComposeInput,
-  ComposePlan,
-  ComposeSettings,
-  ComposeSlot,
-  IngestOptions,
-  IngestResult,
-  LandscapePolicy,
-  PageAnalysis,
-  PageIssue,
-  PagePlan,
-  Rotation,
-  TocRow,
-  UnlockResult,
-} from "./types"
-
+export * from "./types"
 export {
   addRotation,
-  approx,
-  cloneBytes,
+  cwToCcw,
   displayedSize,
-  flattenViewerRotation,
   hexToRgb,
-  isA4Size,
-  isPortrait,
   normalizeRotation,
   placementOnA4,
   toArrayBuffer,
-  viewerTextAngle,
 } from "./geometry"
-
-export { analyzePdf } from "./analyze"
-export { planDocument, planPage } from "./plan"
-export { normalizeDocument, normalizeSinglePage } from "./normalize"
-export { stampPageNumber } from "./stamp"
-export { buildComposePlan, composePdf, tocAsWordText } from "./compose"
-export { ingestPdf, isPdfFile } from "./ingest"
-export { normalizePdfForEditing, loadPdfForEditing } from "./unlock"
+export {
+  bindingRotation,
+  isLandscape,
+  resultingAngle,
+  uprightTurn,
+} from "./rules"
+export {
+  textOrientation,
+  type TextOrientation,
+  type TextItemLike,
+} from "./orientation/text"
+export {
+  detectImageOrientation,
+  rotateGray,
+  type GrayImage,
+  type ImageOrientation,
+} from "./orientation/image"
+export {
+  decideOrientation,
+  imageIsConfident,
+  textIsDecisive,
+  type Detection,
+  type DetectionMethod,
+} from "./orientation/decide"
+export {
+  compareRenders,
+  vectorCopyFailed,
+  type RenderComparison,
+} from "./verify"
+export { NUMBER_SIZES, STAMP_MARGIN_PT, stampPageNumber } from "./stamp"
 export { parseFilename, compareSortKeys, sortByFilename } from "./filename-sort"
-export { getPdfjs, destroyPdf } from "./pdfjs"
+export { zip, crc32, type ZipEntry } from "./zip"

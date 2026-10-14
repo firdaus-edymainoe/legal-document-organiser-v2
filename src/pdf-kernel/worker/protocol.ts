@@ -1,31 +1,13 @@
-import type { ComposeInput, IngestResult, LandscapePolicy, PagePlan } from "../index"
+import type { ComposeRequest, ProbeResult } from "../types"
 
 export type WorkerJob =
-  | {
-      type: "ingest"
-      bytes: Uint8Array
-      landscapePolicy: LandscapePolicy
-    }
-  | {
-      type: "normalize"
-      bytes: Uint8Array
-      plans: PagePlan[]
-    }
-  | {
-      type: "compose"
-      input: ComposeInput
-    }
+  | { type: "probe"; bytes: Uint8Array }
+  | { type: "compose"; request: ComposeRequest }
 
-export type WorkerOk =
-  | { type: "ingest"; result: IngestResult }
-  | { type: "normalize"; bytes: Uint8Array }
-  | { type: "compose"; bytes: Uint8Array }
+export type WorkerRequest = { requestId: string; job: WorkerJob }
 
-export type WorkerRequest = {
-  requestId: string
-  job: WorkerJob
-}
-
-export type WorkerResponse =
-  | { requestId: string; ok: true; payload: WorkerOk }
-  | { requestId: string; ok: false; error: string }
+export type WorkerReply =
+  | { requestId: string; kind: "progress"; done: number; total: number }
+  | { requestId: string; kind: "probe"; result: ProbeResult }
+  | { requestId: string; kind: "compose"; bytes: Uint8Array }
+  | { requestId: string; kind: "error"; error: string }

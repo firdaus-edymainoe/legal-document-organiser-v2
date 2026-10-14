@@ -3,16 +3,7 @@ export const A4 = {
   heightPt: 841.89,
 } as const
 
-export const A4_TOLERANCE_PT = 12
-
-export const STAMP_MARGIN_PT = 24
-export const STAMP_SIZE_PT = 12
-
 export type Rotation = 0 | 90 | 180 | 270
-
-export type LandscapePolicy = "letterbox" | "rotate-cw" | "rotate-ccw"
-
-export type PageIssue = "not-a4" | "not-portrait" | "sideways-text"
 
 export type Box = {
   x: number
@@ -21,112 +12,65 @@ export type Box = {
   height: number
 }
 
-export type PageAnalysis = {
+/** Facts about one source page, as pdf-lib reads it. */
+export type SourcePageInfo = {
   index: number
-  mediaBox: Box
   cropBox: Box
-  sourceRotation: Rotation
-  displayedWidthPt: number
-  displayedHeightPt: number
-  /** Dominant text angle in content space, or null when there is no text layer. */
-  contentTextAngle: number | null
-  /** Content angle plus source /Rotate — what a viewer shows. */
-  displayTextAngle: number | null
-  issues: PageIssue[]
-}
-
-export type AnalyzeResult = {
-  pageCount: number
-  pages: PageAnalysis[]
-}
-
-export type PagePlan = {
-  index: number
-  /** Extra clockwise rotation on top of source /Rotate, applied when drawing. */
+  /** Page /Rotate, clockwise. */
   rotate: Rotation
-  landscapePolicy: LandscapePolicy
+  /** Size as a viewer displays it (after /Rotate), in points. */
+  displayedWidth: number
+  displayedHeight: number
+}
+
+export type ProbeResult = {
+  /** pdf-lib could parse the file and embed its pages as vectors. */
+  vectorOk: boolean
+  /** The file is encrypted; pdf-lib cannot decrypt it, so pages are rasterised. */
+  encrypted: boolean
+  pageCount: number
+  pages: SourcePageInfo[]
+  /** Pages pdf-lib failed to embed. Rasterised instead. */
+  pageErrors: number[]
+  /**
+   * Every page embedded onto A4 with no extra rotation, used to check that the
+   * vector copy draws the same thing pdf.js draws for the original.
+   */
+  probe: Uint8Array | null
+  error?: string
+}
+
+/** What goes on one output sheet. */
+export type SheetContent =
+  | { kind: "vector"; sourceId: string; pageIndex: number }
+  | {
+      kind: "raster"
+      /** JPEG of the page exactly as a viewer displays it (after /Rotate). */
+      image: Uint8Array
+      widthPx: number
+      heightPx: number
+    }
+  | { kind: "blank" }
+  | { kind: "tab"; label: string }
+
+export type SheetSpec = {
+  content: SheetContent
+  /**
+   * Extra clockwise rotation applied to the page *as displayed*. The kernel
+   * adds the source /Rotate itself for vector pages.
+   */
+  rotate: Rotation
+  /** Page colour (#rrggbb), multiplied over the sheet so scans tint too. */
   color: string | null
-  issues: PageIssue[]
-  autoFixed: boolean
-  userOverride: boolean
+  /** Page number to stamp, or null. */
+  number: number | null
 }
 
-export type CanonicalDocument = {
-  bytes: Uint8Array
-  pageCount: number
-  imageOnly: boolean
-  pages: PagePlan[]
-}
+export type NumberSize = "small" | "medium" | "large"
 
-export type UnlockResult = {
-  bytes: Uint8Array
-  bypassApplied: boolean
-  reasons: string[]
-}
-
-export type ComposeSlot =
-  | {
-      kind: "cover"
-      fileId: string
-      fileName: string
-      pageIndex: number
-    }
-  | {
-      kind: "tab"
-      fileId: string
-      fileName: string
-      tabNumber: number
-    }
-  | {
-      kind: "body"
-      fileId: string
-      fileName: string
-      pageIndex: number
-      tabNumber: number
-    }
-
-export type TocRow = {
-  tabNumber: number
-  startPage: number
-  fileName: string
-}
-
-export type ComposeSettings = {
-  tabDividers: boolean
-  pageNumbers: boolean
-  startNumber: number
-  numberCover: boolean
-}
-
-export type ComposeDocument = {
-  id: string
-  fileName: string
-  bytes: Uint8Array
-  pageCount: number
-}
-
-export type ComposeInput = {
-  cover: ComposeDocument | null
-  documents: ComposeDocument[]
-  settings: ComposeSettings
-}
-
-export type ComposePlan = {
-  slots: ComposeSlot[]
-  toc: TocRow[]
-  numberedPageCount: number
-}
-
-export type IngestOptions = {
-  landscapePolicy: LandscapePolicy
-}
-
-export type IngestResult = {
-  unlocked: Uint8Array
-  bypassApplied: boolean
-  reasons: string[]
-  analysis: AnalyzeResult
-  plans: PagePlan[]
-  canonical: Uint8Array
-  imageOnly: boolean
+export type ComposeRequest = {
+  sources: Record<string, Uint8Array>
+  sheets: SheetSpec[]
+  numberSize: NumberSize
+  title?: string
 }

@@ -3,139 +3,162 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/fraunces";
-@import "@fontsource-variable/source-sans-3";
-@import "./shell.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-    --font-heading: "Fraunces Variable", Georgia, serif;
-    --font-sans: "Source Sans 3 Variable", "Segoe UI", sans-serif;
-    --color-sidebar-ring: var(--sidebar-ring);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar: var(--sidebar);
-    --color-chart-5: var(--chart-5);
-    --color-chart-4: var(--chart-4);
-    --color-chart-3: var(--chart-3);
-    --color-chart-2: var(--chart-2);
-    --color-chart-1: var(--chart-1);
-    --color-ring: var(--ring);
-    --color-input: var(--input);
-    --color-border: var(--border);
-    --color-destructive: var(--destructive);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-accent: var(--accent);
-    --color-muted-foreground: var(--muted-foreground);
-    --color-muted: var(--muted);
-    --color-secondary-foreground: var(--secondary-foreground);
-    --color-secondary: var(--secondary);
-    --color-primary-foreground: var(--primary-foreground);
-    --color-primary: var(--primary);
-    --color-popover-foreground: var(--popover-foreground);
-    --color-popover: var(--popover);
-    --color-card-foreground: var(--card-foreground);
-    --color-card: var(--card);
-    --color-foreground: var(--foreground);
-    --color-background: var(--background);
-    --radius-sm: calc(var(--radius) * 0.6);
-    --radius-md: calc(var(--radius) * 0.8);
-    --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
+  --font-sans: "Geist Variable", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Fraunces Variable", Georgia, serif;
+  --font-heading: var(--font-display);
+
+  --color-desk: var(--desk);
+  --color-sheet: var(--sheet);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-rule: var(--rule);
+  --color-registry: var(--registry);
+  --color-registry-soft: var(--registry-soft);
+  --color-manila: var(--manila);
+  --color-manila-deep: var(--manila-deep);
+  --color-caution: var(--caution);
+  --color-caution-soft: var(--caution-soft);
+  --color-imaged: var(--imaged);
+  --color-imaged-soft: var(--imaged-soft);
+
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
 }
 
 :root {
-    --gold: #8d7349;
-    --page: #fffcf7;
-    --select: #eef0f4;
-    --background: #f4f4f6;
-    --foreground: #14161c;
-    --card: #ffffff;
-    --card-foreground: #14161c;
-    --popover: #ffffff;
-    --popover-foreground: #14161c;
-    --primary: #161b27;
-    --primary-foreground: #f6f4ef;
-    --secondary: #eef0f4;
-    --secondary-foreground: #14161c;
-    --muted: #eef0f4;
-    --muted-foreground: #6b6e78;
-    --accent: #eef0f4;
-    --accent-foreground: #14161c;
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: #e4e5ea;
-    --input: #e4e5ea;
-    --ring: #161b27;
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.2rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
-}
+  /* Named palette */
+  --desk: #eceff3; /* the work surface */
+  --sheet: #ffffff; /* paper */
+  --ink: #18202b; /* text */
+  --ink-soft: #5d6878; /* secondary text */
+  --rule: #d5dae1; /* hairlines */
+  --registry: #1f5c4a; /* primary: registry green */
+  --registry-soft: #e3efe9;
+  --manila: #e9d5a1; /* index tabs */
+  --manila-deep: #8a6a24;
+  --caution: #b7791f; /* pages to check */
+  --caution-soft: #fbf1df;
+  --imaged: #5b5f97; /* copied as image */
+  --imaged-soft: #ecedf7;
 
-.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+  /* shadcn mapping */
+  --background: var(--desk);
+  --foreground: var(--ink);
+  --card: var(--sheet);
+  --card-foreground: var(--ink);
+  --popover: var(--sheet);
+  --popover-foreground: var(--ink);
+  --primary: var(--registry);
+  --primary-foreground: #ffffff;
+  --secondary: #e2e6ec;
+  --secondary-foreground: var(--ink);
+  --muted: #e6e9ee;
+  --muted-foreground: var(--ink-soft);
+  --accent: #e2e6ec;
+  --accent-foreground: var(--ink);
+  --destructive: #b42318;
+  --border: var(--rule);
+  --input: #c9cfd8;
+  --ring: var(--registry);
+  --radius: 0.5rem;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    }
-  body {
-    @apply bg-background text-foreground;
-    }
+  }
   html,
   body,
   #root {
     height: 100%;
   }
-  html {
-    @apply font-sans;
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+  }
+  :focus-visible {
+    outline: 2px solid var(--registry);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
     }
+  }
+}
+
+@layer components {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A sheet of paper on the desk, with its binding edge on the left. */
+  .sheet {
+    position: relative;
+    background: var(--sheet);
+    box-shadow:
+      0 0 0 1px rgb(24 32 43 / 0.08),
+      0 1px 2px rgb(24 32 43 / 0.06),
+      0 6px 16px -8px rgb(24 32 43 / 0.18);
+  }
+  .sheet::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: linear-gradient(90deg, rgb(24 32 43 / 0.16), transparent);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* Binder index tab, sticking out of the right edge of a document row. */
+  .index-tab {
+    position: absolute;
+    left: calc(100% + 1px);
+    top: 0.6rem;
+    min-width: 2.4rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0 0.35rem 0.35rem 0;
+    white-space: nowrap;
+    background: var(--manila);
+    color: var(--manila-deep);
+    font-size: 0.7rem;
+    font-weight: 650;
+    letter-spacing: 0.02em;
+    text-align: center;
+    box-shadow: 1px 1px 0 rgb(138 106 36 / 0.18);
+  }
+
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #c3cad4 transparent;
+  }
 }
